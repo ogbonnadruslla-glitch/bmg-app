@@ -1,0 +1,5 @@
+{
+  "name": "BMG Enterprise Solutions",
+  "description": "An application for 'BMG (Business Must Grow) Enterprise Solutions' that supports businesses with growth ideas, sales planning, target setting, and progress monitoring. It provides AI-powered business advice and review check-ins.",
+  "requestFramePermissions": []
+}

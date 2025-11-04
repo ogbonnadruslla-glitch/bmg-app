@@ -1,0 +1,119 @@
+import React, { useState, useEffect } from 'react';
+import { UserProfile } from '../types';
+import { businessCategories, states, lgas } from '../data/nigeria-geo';
+
+interface UserProfileProps {
+    profile: UserProfile;
+    onSave: (profile: UserProfile) => void;
+}
+
+const UserProfileComponent: React.FC<UserProfileProps> = ({ profile, onSave }) => {
+    const [formData, setFormData] = useState<UserProfile>(profile);
+    const [characterCount, setCharacterCount] = useState(profile.about.length);
+
+    useEffect(() => {
+        setFormData(profile);
+        setCharacterCount(profile.about.length);
+    }, [profile]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        
+        if (name === 'about' && value.length > 300) {
+            return;
+        }
+
+        setFormData(prev => ({
+            ...prev,
+            [name]: value,
+            ...(name === 'state' && { lga: '' }) // Reset LGA when state changes
+        }));
+
+        if (name === 'about') {
+            setCharacterCount(value.length);
+        }
+    };
+    
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave(formData);
+        alert('Profile saved successfully!');
+    };
+
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <h1 className="text-3xl font-bold text-gray-900">Your Profile</h1>
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+                <p className="text-yellow-800">
+                    Take a moment to complete your profile. The more we know about your business, the better we can support your growth journey!
+                </p>
+            </div>
+            <form onSubmit={handleSubmit} className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name</label>
+                        <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                    </div>
+                    <div>
+                        <label htmlFor="businessName" className="block text-sm font-medium text-gray-700">Business Name</label>
+                        <input type="text" name="businessName" id="businessName" value={formData.businessName} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                    </div>
+                     <div>
+                        <label htmlFor="currency" className="block text-sm font-medium text-gray-700">Display Currency</label>
+                        <select name="currency" id="currency" value={formData.currency} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500">
+                            <option value="NGN">Nigerian Naira (NGN)</option>
+                            <option value="USD">US Dollar (USD)</option>
+                            <option value="EUR">Euro (EUR)</option>
+                            <option value="GBP">British Pound (GBP)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="businessCategory" className="block text-sm font-medium text-gray-700">Business Category</label>
+                        <select name="businessCategory" id="businessCategory" value={formData.businessCategory} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500">
+                            <option value="">Select a category</option>
+                            {businessCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email Address</label>
+                        <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                    </div>
+                    <div>
+                        <label htmlFor="phone" className="block text-sm font-medium text-gray-700">Phone Number</label>
+                        <input type="tel" name="phone" id="phone" value={formData.phone} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                    </div>
+                     <div>
+                        <label htmlFor="address" className="block text-sm font-medium text-gray-700">Address</label>
+                        <input type="text" name="address" id="address" value={formData.address} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                    </div>
+                     <div>
+                        <label htmlFor="state" className="block text-sm font-medium text-gray-700">State</label>
+                        <select name="state" id="state" value={formData.state} onChange={handleChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500">
+                             <option value="">Select a state</option>
+                             {states.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="lga" className="block text-sm font-medium text-gray-700">LGA</label>
+                        <select name="lga" id="lga" value={formData.lga} onChange={handleChange} disabled={!formData.state} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100">
+                             <option value="">Select an LGA</option>
+                             {formData.state && lgas[formData.state] && lgas[formData.state].map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                    <label htmlFor="about" className="block text-sm font-medium text-gray-700">Tell us about your business</label>
+                    <textarea name="about" id="about" value={formData.about} onChange={handleChange} rows={4} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500"></textarea>
+                    <p className="text-right text-sm text-gray-500">{characterCount} / 300</p>
+                </div>
+                <div className="flex justify-end pt-4">
+                    <button type="submit" className="px-8 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors">
+                        Save Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
+
+export default UserProfileComponent;

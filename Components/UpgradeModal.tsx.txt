@@ -1,0 +1,70 @@
+import React from 'react';
+
+interface UpgradeModalProps {
+    onClose: () => void;
+}
+
+const UpgradeModal: React.FC<UpgradeModalProps> = ({ onClose }) => {
+    
+    const handleConfirmPayment = () => {
+        alert("Thank you! Your account will be upgraded once payment is confirmed. Please allow up to 24 hours.");
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fade-in-up">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl relative">
+                 <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-800 z-20">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+                <div className="p-6 md:p-8">
+                    <div className="text-center">
+                        <h3 className="text-2xl font-bold text-gray-900">Upgrade to BMG Pro</h3>
+                        <p className="text-gray-600 mt-2">Complete your payment to unlock exclusive Pro features.</p>
+                    </div>
+
+                    <div className="bg-green-50 border-2 border-dashed border-green-200 rounded-lg p-6 my-6 text-center">
+                        <p className="text-sm font-semibold text-green-700">LIMITED TIME OFFER (Next 30 Days)</p>
+                        <div className="flex items-center justify-center gap-4 mt-2">
+                            <span className="text-4xl font-bold text-green-800">N45,000 / $32</span>
+                            <span className="text-xl font-medium text-red-500 line-through">N150,000 / $107</span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">One-time payment for a full year of access and dedicated support including check-ins/review meetings</p>
+                    </div>
+
+                    <div className="text-center">
+                        <h4 className="font-semibold text-gray-800 mb-2">Pay via Bank Transfer</h4>
+                        <p className="text-sm text-gray-500">Please make your payment to the appropriate account below. After payment, click the confirmation button.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 text-sm">
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <h5 className="font-bold text-gray-900 mb-2">Naira (₦) Payments</h5>
+                            <p><span className="font-semibold text-gray-600">Bank:</span> FCMB</p>
+                            <p><span className="font-semibold text-gray-600">Account Name:</span> Ogbonna Ndidiamaka</p>
+                            <p><span className="font-semibold text-gray-600">Account Number:</span> 2992783018</p>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <h5 className="font-bold text-gray-900 mb-2">Dollar ($) Payments</h5>
+                            <p><span className="font-semibold text-gray-600">Bank:</span> FCMB</p>
+                            <p><span className="font-semibold text-gray-600">Account Name:</span> Ogbonna Ndidiamaka</p>
+                            <p><span className="font-semibold text-gray-600">Account Number:</span> 1015201966</p>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-6 text-center text-sm text-gray-700">
+                        <p>
+                            Email payment evidence to <a href="mailto:bmgenterprisesolutions@gmail.com" className="font-semibold text-green-600 hover:underline">bmgenterprisesolutions@gmail.com</a>
+                        </p>
+                    </div>
+
+                    <button onClick={handleConfirmPayment} className="w-full mt-4 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition-colors">
+                        I Have Made the Payment
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default UpgradeModal;

@@ -1,0 +1,347 @@
+import React, { useState, useEffect, useCallback } from 'react';
+
+// --- Reusable Components ---
+const EditableField: React.FC<{
+    name: string;
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+    placeholder?: string;
+}> = ({ name, value, onChange, placeholder = "Click or tap here to enter text." }) => {
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+        }
+    }, [value]);
+    
+    return (
+        <textarea
+            ref={textareaRef}
+            name={name}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            rows={1}
+            className="w-full bg-transparent p-1 focus:outline-none focus:bg-green-50/50 rounded-md resize-none overflow-hidden"
+        />
+    );
+};
+
+// --- Template Data and Structure ---
+
+const initialData: { [key: string]: string } = {
+    mission: "", mission_numbers: "", vision: "", vision_numbers: "",
+    short_term_obj: "", mid_term_obj: "", long_term_obj: "",
+    short_term_nums: "", mid_term_nums: "", long_term_nums: "",
+    offerings: "", uniqueness: "", problem_solved: "", future_products: "",
+    ideal_customers: "", demographics: "", market_size: "",
+    admiration: "", competitor_sales: "",
+    current_channels: "", quantify_growth: "", sales_percentage: "",
+    customers_per_channel: "", new_channels: "",
+    product_list: "", product_prices: "", margins: "",
+    current_customers: "", territories_outlets: "",
+    sales_strategy: "", delivery_channels: "", sales_targets: "",
+    delivery_capacity: "",
+    marketing_activities: "", marketing_budget: "", marketing_results: "",
+    current_opex: "", staff_cost: "", other_costs: "",
+    fixed_variable: "", resources_for_growth: "", marketing_expectation: "",
+    pricing_model: "", revenue_projection: "", sales_expectation: "",
+    historic_sales: "", growth_multiplier: "", numeric_target: "",
+    action_for_efficiency: "", extra_monthly_growth: "", compounding_duration: "",
+    scenario1_rate: "", scenario1_actions: "",
+    scenario2_rate: "", scenario2_actions: "",
+    scenario3_rate: "", scenario3_actions: "",
+    monthly_ramp_plan: "", key_risks: "", quick_adjustments: "",
+    reflection_mission: "", reflection_channel: "", reflection_sales: "", reflection_costs: "",
+    action1_goal: "", action1_steps: "", action1_person: "", action1_date: "", action1_measure: "",
+    action2_goal: "", action2_steps: "", action2_person: "", action2_date: "", action2_measure: "",
+    action3_goal: "", action3_steps: "", action3_person: "", action3_date: "", action3_measure: "",
+};
+const LOCAL_STORAGE_KEY = 'bmg-preparatory-template-data';
+
+const templateStructure = [
+    { title: "SECTION ONE: BUSINESS PURPOSE (Why does your business exist?)", subsections: [
+        { title: "1. MISSION & VISION", type: 'table', headers: ["Guiding Question", "Example", "Your Answer"], rows: [
+            { question: "Mission: In one sentence, state your current mission (Your purpose today).", example: "e.g. To provide affordable groceries to families in my city.", fieldName: "mission" },
+            { question: "Mission Numbers: Translate your mission into today’s numbers (customers, sales, service coverage).", example: "e.g. Serve 1,000 families per month with N5M in monthly revenue by covering 3 districts.", fieldName: "mission_numbers" },
+            { question: "Vision: In one sentence, state your long-term vision (Your future destination).", example: "e.g. To be the largest neighborhood supermarket chain in my state.", fieldName: "vision" },
+            { question: "Vision Numbers: Translate your vision into future numbers.", example: "e.g. By 2028, serve 20,000 households, achieve N100M monthly sales, and employ 50 staff.", fieldName: "vision_numbers" }
+        ]},
+        { title: "2. BUSINESS OBJECTIVES", type: 'qa_table', rows: [
+            { question: "Short-term Objectives (1 year): What are your goals?", fieldName: "short_term_obj" }, { question: "Mid-term Objectives (2–3 years): What are your goals?", fieldName: "mid_term_obj" },
+            { question: "Long-term Objectives (5 years): What are your goals?", fieldName: "long_term_obj" }, { question: "Short-term Numbers: Measurable numbers for the next 1 year (sales, customers, market share).", fieldName: "short_term_nums" },
+            { question: "Mid-term Numbers: Measurable numbers for 2–3 years.", fieldName: "mid_term_nums" }, { question: "Long-term Numbers: Measurable numbers for 5 years.", fieldName: "long_term_nums" }
+        ]},
+        { title: "3. PRODUCTS & SERVICES", type: 'qa_table', rows: [
+            { question: "Offerings: What products/services do you offer?", fieldName: "offerings" }, { question: "Uniqueness: What makes them unique?", fieldName: "uniqueness" },
+            { question: "Problem Solved: Which problem(s) do they solve for your target audience?", fieldName: "problem_solved" }, { question: "Future Products: Any products you hope to introduce in the nearest future (next 3 months - 1 year)?", fieldName: "future_products" }
+        ]},
+        { title: "4. TARGET MARKET & CUSTOMERS", type: 'qa_table', rows: [
+            { question: "Ideal Customers: Who are your ideal customers?", fieldName: "ideal_customers" }, { question: "Demographics: What are their key demographics (age, income, location, habits)?", fieldName: "demographics" },
+            { question: "Market Size: How large is this market (numbers, size, value)?", fieldName: "market_size" }
+        ]},
+        { title: "5. COMPETITION", type: 'qa_table', rows: [
+            { question: "Admiration: Which competitor(s) in your line of business do you admire and why?", fieldName: "admiration" }, { question: "Competitor Sales: How do these competitors sell their products?", fieldName: "competitor_sales" }
+        ]}
+    ]},
+    { title: "SECTION TWO: SALES (How do you sell?)", subsections: [
+        { title: "1. SALES CHANNELS", type: 'qa_table', rows: [
+            { question: "Current Channels: How do you sell currently (end users, distributors, corporate users, etc.)?", fieldName: "current_channels" }, { question: "Quantify Growth: Describe how you will quantify growth (Number of customers, geographic coverage, number of outlets).", fieldName: "quantify_growth" },
+            { question: "Sales Percentage: What is your percentage (%) of sales per channel?", fieldName: "sales_percentage" }, { question: "Customers per Channel: How many customers does each channel deliver monthly?", fieldName: "customers_per_channel" },
+            { question: "New Channels: What new channels can you add this year?", fieldName: "new_channels" }
+        ]},
+        { title: "2. PRODUCTS & COVERAGE", type: 'qa_table', rows: [
+            { question: "Product List: List your products/product lines.", fieldName: "product_list" }, { question: "Product Prices: List prices of your products or averages per product line.", fieldName: "product_prices" },
+            { question: "Margins: What are your margins (profit) per product or average per product line/category?", fieldName: "margins" }, { question: "Current Customers: How many customers do you currently have?", fieldName: "current_customers" },
+            { question: "Territories/Outlets: How many geographic territories and outlets do you currently have?", fieldName: "territories_outlets" }
+        ]},
+        { title: "3. SALES & DELIVERY PLAN (Strategy)", type: 'qa_table', rows: [
+            { question: "Sales Strategy: What is your sales strategy?", fieldName: "sales_strategy" }, { question: "Delivery Channels: What are your sales delivery channels (end users, distributors)?", fieldName: "delivery_channels" },
+            { question: "Sales Targets: What are your monthly/quarterly sales targets?", fieldName: "sales_targets" }, { question: "Delivery Capacity: How will delivery capacity support these targets?", fieldName: "delivery_capacity" }
+        ]},
+        { title: "4. MARKETING STRATEGY", type: 'qa_table', rows: [
+            { question: "Activities: What marketing activities will you use (ads, referrals, social media, etc.)?", fieldName: "marketing_activities" }, { question: "Budget: What is the budget allocation for marketing?", fieldName: "marketing_budget" },
+            { question: "Expected Results: What results (in sales or leads) do you expect per marketing activity?", fieldName: "marketing_results" }
+        ]},
+        { title: "5. COST & RESOURCES (Opex & Manpower)", type: 'qa_table', rows: [
+            { question: "Current Opex: What are your current operating expenses (Opex)?", fieldName: "current_opex" }, { question: "Current Staff Cost/Plans: What is your current staff cost? Any plans to increase staff to deliver on increased sales?", fieldName: "staff_cost" },
+            { question: "Other Costs: Indicate other costs and sum them up.", fieldName: "other_costs" }, { question: "Fixed vs. Variable Costs: Which costs are fixed (e.g., rent, salaries) vs. variable (e.g., raw materials, commissions)?", fieldName: "fixed_variable" },
+            { question: "Resources for Growth: If sales goals increase, how many more staff/resources would be needed?", fieldName: "resources_for_growth" }, { question: "Marketing Result Expectation: If marketing budget increases, what results do you expect?", fieldName: "marketing_expectation" }
+        ]}
+    ]},
+    { title: "SECTION THREE: BUSINESS GROWTH PROJECTIONS (How will you grow?)", subsections: [
+        { title: "1. REVENUE & PRICING", type: 'qa_table', rows: [
+            { question: "Pricing Model: What is your pricing model?", fieldName: "pricing_model" }, { question: "Revenue Projection: How do you project revenue (units × price)?", fieldName: "revenue_projection" },
+            { question: "Sales Expectation: What is your expected monthly/annual Sales?", fieldName: "sales_expectation" }
+        ]},
+        { title: "2. GROWTH PROJECTIONS", type: 'custom', content: [
+            { title: "A. Historical Sales", type: 'qa_table', rows: [{ question: "Historic Sales: Enter historic sales (last 12 months, or last month, quarter, year totals).", fieldName: "historic_sales" }]},
+            { title: "B. Baseline Growth Potential (using existing resources)", type: 'qa_table', rows: [
+                { question: "Growth Multiplier: With current resources, what growth multiplier is realistic this year? (e.g., 1.5× / 2× or in percentage).", fieldName: "growth_multiplier" },
+                { question: "Numeric Target: Translate multiplier into numeric monthly & annual target (Target = Base Sales + Growth).", fieldName: "numeric_target" }
+            ]},
+            { title: "C. Efficiency-driven Monthly Gains", type: 'qa_table', rows: [
+                { question: "Action for Efficiency: What do you need to do to increase sales using your current resources/resources you can currently afford?", fieldName: "action_for_efficiency" },
+                { question: "Extra Monthly Growth: If you improve efficiency, how much extra growth per month can you add? (enter % per month, e.g., 3%/month).", fieldName: "extra_monthly_growth" },
+                { question: "Compounding Duration: Indicate for how many months this improvement will compound (e.g., 6 months).", fieldName: "compounding_duration" }
+            ]},
+            { title: "D. Growth Scenarios (Fill one row per scenario)", type: 'scenarios_table', rows: [
+                { scenario: "Scenario 1:", rateField: "scenario1_rate", actionsField: "scenario1_actions" }, { scenario: "Scenario 2:", rateField: "scenario2_rate", actionsField: "scenario2_actions" },
+                { scenario: "Scenario 3:", rateField: "scenario3_rate", actionsField: "scenario3_actions" }
+            ]},
+            { title: "E. Monthly Ramp Plan", type: 'qa_table', rows: [{ question: "Monthly Targets: If growth is phased, list monthly % increase or absolute monthly targets for the next 3–12 months.", fieldName: "monthly_ramp_plan" }]}
+        ]},
+        { title: "3. RISKS & ADJUSTMENT", type: 'qa_table', rows: [
+            { question: "Key Risks: What are the key risks that could affect your sales plan (competition, regulation, supplier issues)?", fieldName: "key_risks" },
+            { question: "Quick Adjustments: What adjustments can you make quickly (more sales staff, higher marketing activities, new delivery channels)?", fieldName: "quick_adjustments" }
+        ]}
+    ]},
+    { title: "REFLECTIONS & ACTION PLAN", subsections: [
+        { title: "REFLECTION PROMPTS", type: 'qa_table', rows: [
+            { question: "What new clarity do you have about your mission/vision?", fieldName: "reflection_mission" }, { question: "Which sales channel looks strongest?", fieldName: "reflection_channel" },
+            { question: "How do past sales compare with your goals?", fieldName: "reflection_sales" }, { question: "Which costs feel essential vs. negotiable?", fieldName: "reflection_costs" }
+        ]},
+        { title: "ACTION PLAN", type: 'action_plan_table', rows: [
+            { goal: "action1_goal", steps: "action1_steps", person: "action1_person", date: "action1_date", measure: "action1_measure" },
+            { goal: "action2_goal", steps: "action2_steps", person: "action2_person", date: "action2_date", measure: "action2_measure" },
+            { goal: "action3_goal", steps: "action3_steps", person: "action3_person", date: "action3_date", measure: "action3_measure" }
+        ]}
+    ]}
+];
+
+// --- Vision Board Component ---
+const VisionBoard: React.FC<{ formData: typeof initialData; onBack: () => void; }> = ({ formData, onBack }) => {
+    const handlePrint = () => window.print();
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <style>{`
+                @media print {
+                    body * { visibility: hidden; }
+                    .printable-vision-board, .printable-vision-board * { visibility: visible; }
+                    .printable-vision-board { position: absolute; left: 0; top: 0; width: 100%; padding: 1rem; }
+                    .no-print { display: none; }
+                }
+            `}</style>
+             <div className="flex justify-between items-center no-print">
+                <button onClick={onBack} className="text-green-600 hover:text-green-800 font-medium">&larr; Back to Edit Template</button>
+                <button onClick={handlePrint} className="px-4 py-2 text-sm font-medium bg-green-600 text-white border border-transparent rounded-md shadow-sm hover:bg-green-700">Print Vision Board</button>
+            </div>
+            <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm space-y-8 printable-vision-board">
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold text-gray-900">Vision Board Summary</h1>
+                    <p className="text-gray-600">A summary of your business growth preparatory plan.</p>
+                </div>
+
+                {templateStructure.map((section, sectionIndex) => (
+                    <section key={sectionIndex} className="space-y-4">
+                        <h3 className="text-xl font-bold text-gray-800 border-b pb-2">{section.title}</h3>
+                        {section.subsections.map((subsection, subIndex) => {
+                             const allRows = (subsection.type === 'custom' ? subsection.content.flatMap(c => c.rows) : subsection.rows) as any[];
+                             const answeredRows = allRows.filter(row => {
+                                const fieldNames = Object.values(row) as string[];
+                                return fieldNames.some(fieldName => typeof fieldName === 'string' && formData[fieldName]);
+                             });
+
+                             if(answeredRows.length === 0) return null;
+
+                             return (
+                                <div key={subIndex} className="space-y-2">
+                                    <h4 className="text-lg font-semibold text-gray-700">{subsection.title}</h4>
+                                    <div className="space-y-3 pl-4">
+                                        {(subsection.rows as any[]).map((row, rowIndex) => (
+                                            formData[row.fieldName] && (
+                                                <div key={rowIndex}>
+                                                    <p className="font-semibold text-gray-600">{row.question}</p>
+                                                    <p className="text-gray-800 pl-2 border-l-2 border-green-200">{formData[row.fieldName]}</p>
+                                                </div>
+                                            )
+                                        ))}
+                                    </div>
+                                </div>
+                             )
+                        })}
+                    </section>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+
+// --- Preparatory Template Component ---
+
+const PreparatoryTemplate: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+    const [formData, setFormData] = useState<typeof initialData>(initialData);
+    const [view, setView] = useState<'form' | 'vision_board'>('form');
+
+    useEffect(() => {
+        try {
+            const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (savedData) {
+                setFormData(JSON.parse(savedData));
+            }
+        } catch (error) { console.error("Failed to load template data", error); }
+    }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(formData));
+        } catch (error) { console.error("Failed to save template data", error); }
+    }, [formData]);
+
+    const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    }, []);
+
+    const handlePrint = () => window.print();
+    const handleReset = () => {
+        if (window.confirm("Are you sure you want to reset all fields? This cannot be undone.")) {
+            setFormData(initialData);
+        }
+    };
+
+    const renderTable = (headers: string[], rows: { question: string, example: string, fieldName: string }[]) => (
+        <table className="w-full border-collapse text-sm">
+            <thead>
+                <tr>{headers.map(h => <th key={h} className="border p-2 text-left bg-gray-50 font-semibold">{h}{h === "Your Answer" && <span className="block text-xs font-normal text-gray-500">Fill all Answers</span>}</th>)}</tr>
+            </thead>
+            <tbody>
+                {rows.map(row => (
+                    <tr key={row.fieldName}>
+                        <td className="border p-2 w-1/3">{row.question}</td>
+                        <td className="border p-2 w-1/3 text-gray-500 italic">{row.example}</td>
+                        <td className="border p-2 w-1/3"><EditableField name={row.fieldName} value={formData[row.fieldName]} onChange={handleChange} /></td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+     const renderQATable = (rows: { question: string, fieldName: string }[]) => (
+        <table className="w-full border-collapse text-sm">
+             <thead>
+                <tr>
+                    <th className="border p-2 text-left bg-gray-50 font-semibold w-1/2">Guiding Question</th>
+                    <th className="border p-2 text-left bg-gray-50 font-semibold w-1/2">Your Answer <span className="block text-xs font-normal text-gray-500">Fill all Answers</span></th>
+                </tr>
+            </thead>
+             <tbody>
+                {rows.map(row => (
+                     <tr key={row.fieldName}>
+                        <td className="border p-2 w-1/2 font-medium">{row.question}</td>
+                        <td className="border p-2 w-1/2"><EditableField name={row.fieldName} value={formData[row.fieldName]} onChange={handleChange} /></td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+
+    if (view === 'vision_board') {
+        return <VisionBoard formData={formData} onBack={() => setView('form')} />;
+    }
+
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <style>{`
+                @media print {
+                    body * { visibility: hidden; }
+                    .printable-area, .printable-area * { visibility: visible; }
+                    .printable-area { position: absolute; left: 0; top: 0; width: 100%; }
+                    .no-print { display: none; }
+                }
+            `}</style>
+            
+            <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm space-y-8 printable-area">
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold text-gray-900">Business Growth Preparatory Template</h1>
+                    <h2 className="text-lg font-medium text-gray-700">PREPARATORY TEMPLATE & VISION BOARD</h2>
+                </div>
+                
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                    <h3 className="font-bold text-yellow-800">📝 HOW TO USE THIS TEMPLATE</h3>
+                    <p className="text-sm text-yellow-700">This workbook helps you move from scattered ideas to a clear, documented growth plan. It is time to GROWTH THINK!</p>
+                    <p className="text-sm text-yellow-700 mt-2"><span className="font-semibold">Tips:</span> Be honest, keep answers short, use this as a thinking space, and the clearer your answers, the more accurate your plans will be.</p>
+                </div>
+                
+                {templateStructure.map((section, sectionIndex) => (
+                    <section key={sectionIndex} className="space-y-6">
+                         <h3 className="text-xl font-bold text-gray-800 border-b pb-2">{section.title}</h3>
+                         {section.subsections.map((subsection: any, subIndex) => (
+                            <div key={subIndex}>
+                                <h4 className="text-lg font-semibold text-gray-700 mb-2">{subsection.title}</h4>
+                                {subsection.type === 'table' && renderTable(subsection.headers, subsection.rows)}
+                                {subsection.type === 'qa_table' && renderQATable(subsection.rows)}
+                                {subsection.type === 'custom' && subsection.content.map((item: any, itemIndex: number) => (
+                                    <div key={itemIndex} className="mb-4">
+                                        <h5 className="font-semibold text-gray-600 mb-2">{item.title}</h5>
+                                        {item.type === 'qa_table' && renderQATable(item.rows)}
+                                        {item.type === 'scenarios_table' && <table className="w-full border-collapse text-sm"><thead><tr><th className="border p-2 text-left bg-gray-50 font-semibold">Scenario Name (Base/Conservative/Aggressive)</th><th className="border p-2 text-left bg-gray-50 font-semibold">Growth Rate/Multiplier (Annual or Monthly %)</th><th className="border p-2 text-left bg-gray-50 font-semibold">Key Actions Required</th></tr></thead><tbody>{item.rows.map((row: any, i: number) => <tr key={i}><td className="border p-2">{row.scenario}</td><td className="border p-2"><EditableField name={row.rateField} value={formData[row.rateField]} onChange={handleChange} placeholder="[RATE]" /></td><td className="border p-2"><EditableField name={row.actionsField} value={formData[row.actionsField]} onChange={handleChange} /></td></tr>)}</tbody></table>}
+                                    </div>
+                                ))}
+                                {subsection.type === 'action_plan_table' && <table className="w-full border-collapse text-sm"><thead><tr>{["Goal", "Steps to Achieve", "Responsible Person", "Target Date", "Success Measure"].map(h => <th key={h} className="border p-2 text-left bg-gray-50 font-semibold">{h}</th>)}</tr></thead><tbody>{[1, 2, 3].map(i => <tr key={i}><td className="border p-2"><EditableField name={`action${i}_goal`} value={formData[`action${i}_goal`]} onChange={handleChange} placeholder={`[GOAL ${i}]`}/></td><td className="border p-2"><EditableField name={`action${i}_steps`} value={formData[`action${i}_steps`]} onChange={handleChange} placeholder="[STEPS]"/></td><td className="border p-2"><EditableField name={`action${i}_person`} value={formData[`action${i}_person`]} onChange={handleChange} placeholder="[PERSON]"/></td><td className="border p-2"><EditableField name={`action${i}_date`} value={formData[`action${i}_date`]} onChange={handleChange} placeholder="[DATE]"/></td><td className="border p-2"><EditableField name={`action${i}_measure`} value={formData[`action${i}_measure`]} onChange={handleChange} placeholder="[MEASURE]"/></td></tr>)}</tbody></table>}
+                            </div>
+                         ))}
+                    </section>
+                ))}
+            </div>
+
+            <div className="bg-green-50 p-4 rounded-lg border border-green-200 no-print">
+                <h3 className="font-bold text-green-800">🚀 Your Next Step</h3>
+                <p className="text-sm text-green-700">Great work! You've laid the foundation. Now, take these insights and numbers to the <span className="font-semibold">Action to Growth Projections</span> template to build your detailed financial forecast.</p>
+            </div>
+
+            <div className="no-print mt-8 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm sticky bottom-4">
+                 <button onClick={onBack} className="text-green-600 hover:text-green-800 font-medium">&larr; Back to Templates</button>
+                 <div className="flex flex-wrap justify-center sm:justify-end items-center gap-2">
+                    <button onClick={handleReset} className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Reset</button>
+                    <button onClick={handlePrint} className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Print / Save as PDF</button>
+                    <button onClick={() => setView('vision_board')} className="px-4 py-2 text-sm font-medium bg-green-600 text-white border border-transparent rounded-md shadow-sm hover:bg-green-700">Save & View Vision Board</button>
+                 </div>
+            </div>
+        </div>
+    );
+};
+
+export default PreparatoryTemplate;

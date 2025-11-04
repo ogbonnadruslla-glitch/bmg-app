@@ -1,0 +1,318 @@
+import React, { useState } from 'react';
+import { SalesTarget, SalesLog, Product, Currency } from '../types';
+import { generateSalesPlan } from '../services/geminiService';
+
+const Spinner: React.FC = () => (
+    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+);
+
+interface SalesAndPlanningProps {
+    targets: SalesTarget;
+    updateTargets: (targets: SalesTarget) => void;
+    addLog: (log: Omit<SalesLog, 'id'>) => void;
+    categories: string[];
+    addCategory: (category: string) => void;
+    products: Product[];
+    addProduct: (product: Omit<Product, 'id'>) => void;
+    currency: Currency;
+}
+
+type ActiveTab = 'TARGETS' | 'LOG' | 'CATEGORIES' | 'PRODUCTS' | 'PLAN';
+
+const currencySymbols: { [key in Currency]: string } = { NGN: '₦', USD: '$', EUR: '€', GBP: '£' };
+
+
+const SalesAndPlanning: React.FC<SalesAndPlanningProps> = ({ targets, updateTargets, addLog, categories, addCategory, products, addProduct, currency }) => {
+    const [activeTab, setActiveTab] = useState<ActiveTab>('CATEGORIES');
+    const [localTargets, setLocalTargets] = useState<SalesTarget>(targets);
+    const [logEntry, setLogEntry] = useState({
+        date: new Date().toISOString().split('T')[0],
+        amount: '',
+        notes: '',
+        category: categories[0] || '',
+        product: '',
+    });
+    const [newCategory, setNewCategory] = useState('');
+    const [newProduct, setNewProduct] = useState({
+        name: '',
+        category: categories[0] || '',
+        price: '',
+        margin: ''
+    });
+    
+    const [planBusinessInfo, setPlanBusinessInfo] = useState('');
+    const [planGoal, setPlanGoal] = useState('');
+    const [generatedPlan, setGeneratedPlan] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    
+    const currencySymbol = currencySymbols[currency] || '₦';
+
+    const handleTargetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setLocalTargets(prev => ({ ...prev, [name]: Number(value) }));
+    };
+
+    const handleLogChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        
+        const update: { [key: string]: any } = { [name]: value };
+
+        if (name === 'product') {
+            const selectedProduct = products.find(p => p.name === value);
+            if (selectedProduct) {
+                update['amount'] = String(selectedProduct.price || '');
+                update['category'] = selectedProduct.category;
+            }
+        }
+        
+        if (name === 'category') {
+            update['product'] = '';
+            update['amount'] = '';
+        }
+
+        setLogEntry(prev => ({ ...prev, ...update }));
+    };
+
+    const handleProductChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setNewProduct(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSaveTargets = (e: React.FormEvent) => {
+        e.preventDefault();
+        updateTargets(localTargets);
+        alert("Targets saved!");
+    };
+
+    const handleAddLog = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!logEntry.date || !logEntry.category || !logEntry.product || !logEntry.amount || !logEntry.notes.trim()) {
+            alert("Please fill out all fields to log a sale.");
+            return;
+        }
+        addLog({ ...logEntry, amount: Number(logEntry.amount), notes: logEntry.notes.trim() });
+        setLogEntry({ date: new Date().toISOString().split('T')[0], amount: '', notes: '', category: categories[0] || '', product: '' });
+        alert("Sales log added!");
+    };
+    
+    const handleAddCategory = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newCategory.trim()) {
+            addCategory(newCategory.trim());
+            setNewCategory('');
+        }
+    };
+
+    const handleAddProduct = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newProduct.name.trim() && newProduct.category) {
+            addProduct({ ...newProduct, price: Number(newProduct.price), margin: Number(newProduct.margin) });
+            setNewProduct({ name: '', category: categories[0] || '', price: '', margin: '' });
+        }
+    };
+
+    const handleGeneratePlan = async () => {
+        if (!planBusinessInfo || !planGoal) {
+            alert("Please provide business information and a goal.");
+            return;
+        }
+        setIsGenerating(true);
+        setGeneratedPlan('');
+        const plan = await generateSalesPlan(planBusinessInfo, planGoal);
+        setGeneratedPlan(plan);
+        setIsGenerating(false);
+        alert("Your AI-powered sales plan has been successfully generated below!");
+    };
+
+    const tabs: {id: ActiveTab, label: string}[] = [
+        {id: 'CATEGORIES', label: 'Manage Categories'},
+        {id: 'PRODUCTS', label: 'Manage Products'},
+        {id: 'TARGETS', label: 'Set Targets'},
+        {id: 'LOG', label: 'Log Sales'},
+        {id: 'PLAN', label: 'Generate AI Plan'},
+    ];
+    
+    const renderContent = () => {
+        if (activeTab === 'TARGETS') {
+            return (
+                <form onSubmit={handleSaveTargets} className="space-y-6">
+                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200"><p className="text-sm text-yellow-800">You can set your own targets manually here, or for a more dynamic experience, use the "BMG Templates" (a Pro feature) to have your targets automatically calculated and linked to your dashboard.</p></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {Object.keys(localTargets).map((key) => (
+                            <div key={key}>
+                                <label htmlFor={key} className="block text-sm font-medium text-gray-700 capitalize">{key}</label>
+                                <div className="mt-1 relative rounded-md shadow-sm">
+                                    <div className="pointer-events-none absolute inset-y-0 left-0 pl-3 flex items-center"><span className="text-gray-500 sm:text-sm">{currencySymbol}</span></div>
+                                    <input type="number" name={key} id={key} value={localTargets[key as keyof SalesTarget]} onChange={handleTargetChange} className="w-full bg-white border-gray-300 text-gray-900 rounded-md pl-7 pr-4 py-2 focus:ring-green-500 focus:border-green-500" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end">
+                        <button type="submit" className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors">Save Targets</button>
+                    </div>
+                </form>
+            );
+        }
+        if (activeTab === 'LOG') {
+            const productsInCategory = products.filter(p => p.category === logEntry.category);
+            return (
+                <form onSubmit={handleAddLog} className="space-y-6">
+                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200"><p className="text-sm text-yellow-800">First, ensure you have added categories and products in the 'Manage' tabs. Selecting a product here will automatically fill its price and category.</p></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label htmlFor="date" className="block text-sm font-medium text-gray-700">Date *</label>
+                            <input type="date" name="date" id="date" value={logEntry.date} onChange={handleLogChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" required />
+                        </div>
+                        <div>
+                            <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category *</label>
+                            <select name="category" id="category" value={logEntry.category} onChange={handleLogChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" required>
+                                <option value="">Select a Category</option>
+                                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="product" className="block text-sm font-medium text-gray-700">Product / Service *</label>
+                            <select name="product" id="product" value={logEntry.product} onChange={handleLogChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" disabled={!logEntry.category} required>
+                                <option value="">Select a Product</option>
+                                {productsInCategory.map(prod => <option key={prod.id} value={prod.name}>{prod.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Price *</label>
+                             <div className="mt-1 relative rounded-md shadow-sm">
+                                <div className="pointer-events-none absolute inset-y-0 left-0 pl-3 flex items-center"><span className="text-gray-500 sm:text-sm">{currencySymbol}</span></div>
+                                <input type="number" name="amount" id="amount" value={logEntry.amount} onChange={handleLogChange} placeholder="Auto-filled from product" className="w-full bg-white border-gray-300 text-gray-900 rounded-md pl-7 pr-4 py-2 focus:ring-green-500 focus:border-green-500" required />
+                             </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label htmlFor="notes" className="block text-sm font-medium text-gray-700">Notes / Activity *</label>
+                        <textarea name="notes" id="notes" value={logEntry.notes} onChange={handleLogChange} rows={4} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" placeholder="e.g., Closed deal with new client" required></textarea>
+                    </div>
+                    <div className="flex justify-end">
+                        <button type="submit" className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors">Add Log</button>
+                    </div>
+                </form>
+            );
+        }
+        if (activeTab === 'CATEGORIES') {
+             return (
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-900">Manage Categories</h3>
+                        <p className="text-sm text-gray-500 mt-1">Add categories to organize your sales logs and products.</p>
+                    </div>
+                    <form onSubmit={handleAddCategory} className="flex items-center space-x-4">
+                        <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="New category name" className="flex-1 bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                        <button type="submit" className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors">Add</button>
+                    </form>
+                    <div>
+                        <h4 className="font-semibold text-gray-800">Existing Categories:</h4>
+                        {categories.length > 0 ? (
+                            <ul className="mt-2 space-y-2 list-disc list-inside text-gray-600">{categories.map(cat => (<li key={cat}>{cat}</li>))}</ul>
+                        ) : (<p className="text-gray-500 mt-2">No categories added yet.</p>)}
+                    </div>
+                </div>
+            );
+        }
+        if (activeTab === 'PRODUCTS') {
+             return (
+                <div className="space-y-6">
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-900">Manage Products / Services</h3>
+                        <p className="text-sm text-gray-500 mt-1">Add your products or services and set their price and margin.</p>
+                    </div>
+                    <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-4">
+                            <div>
+                                <label htmlFor="name" className="block text-sm font-medium text-gray-700">Product/Service Name</label>
+                                <input type="text" name="name" id="name" value={newProduct.name} onChange={handleProductChange} placeholder="e.g., Premium Widget" className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                            </div>
+                            <div>
+                                <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
+                                <select name="category" id="category" value={newProduct.category} onChange={handleProductChange} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500">
+                                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="price" className="block text-sm font-medium text-gray-700">Price ({currencySymbol})</label>
+                                <input type="number" name="price" id="price" value={newProduct.price} onChange={handleProductChange} placeholder="e.g., 5000" className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                            </div>
+                             <div>
+                                <label htmlFor="margin" className="block text-sm font-medium text-gray-700">Margin ({currencySymbol})</label>
+                                <input type="number" name="margin" id="margin" value={newProduct.margin} onChange={handleProductChange} placeholder="e.g., 500" className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" />
+                            </div>
+                        </div>
+                        <button type="submit" className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors h-fit">Add Product</button>
+                    </form>
+                    <div>
+                        <h4 className="font-semibold text-gray-800">Your Products:</h4>
+                        {products.length > 0 ? (
+                            <ul className="mt-2 space-y-2 text-gray-600">
+                                {products.map(p => (
+                                    <li key={p.id} className="p-2 bg-gray-50 rounded-md grid grid-cols-3 items-center">
+                                        <span>
+                                            <span className="font-semibold">{p.name}</span> in <span className="text-xs font-semibold bg-green-100 text-green-800 px-2 py-0.5 rounded-full">{p.category}</span>
+                                        </span>
+                                        <span className="font-semibold text-gray-800 text-right">Price: {currencySymbol}{p.price?.toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-800 text-right">Margin: {currencySymbol}{p.margin?.toLocaleString()}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (<p className="text-gray-500 mt-2">No products added yet.</p>)}
+                    </div>
+                </div>
+            );
+        }
+        if (activeTab === 'PLAN') {
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <label htmlFor="businessInfo" className="block text-sm font-medium text-gray-700">Describe your business</label>
+                        <textarea id="businessInfo" value={planBusinessInfo} onChange={(e) => setPlanBusinessInfo(e.target.value)} rows={3} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" placeholder="e.g., A SaaS company selling project management software..."></textarea>
+                    </div>
+                     <div>
+                        <label htmlFor="goal" className="block text-sm font-medium text-gray-700">What is your primary sales goal?</label>
+                        <input id="goal" value={planGoal} onChange={(e) => setPlanGoal(e.target.value)} className="mt-1 w-full bg-white border-gray-300 text-gray-900 rounded-md px-3 py-2 focus:ring-green-500 focus:border-green-500" placeholder="e.g., Increase monthly recurring revenue by 20%..."/>
+                    </div>
+                    <div className="flex justify-end">
+                        <button onClick={handleGeneratePlan} disabled={isGenerating} className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center space-x-2 disabled:bg-gray-500">
+                            {isGenerating && <Spinner />}
+                            <span>{isGenerating ? 'Generating...' : 'Generate Plan'}</span>
+                        </button>
+                    </div>
+                    {generatedPlan && (
+                        <div className="prose max-w-none bg-gray-50 border border-gray-200 rounded-lg p-6 mt-6">
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700">{generatedPlan}</pre>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+    };
+    
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <h1 className="text-3xl font-bold text-gray-900">Sales & Planning</h1>
+            <div className="border-b border-gray-200">
+                <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto" aria-label="Tabs">
+                    {tabs.map(tab => (
+                         <button 
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)} 
+                            className={`${activeTab === tab.id ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+            <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm">
+                {renderContent()}
+            </div>
+        </div>
+    );
+};
+
+export default SalesAndPlanning;

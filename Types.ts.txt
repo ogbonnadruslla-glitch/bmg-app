@@ -1,0 +1,127 @@
+// Fix: Export Currency type to be used across the application and fix module import errors.
+export type Currency = 'NGN' | 'USD' | 'EUR' | 'GBP';
+
+export interface SalesTarget {
+  daily: number;
+  weekly: number;
+  monthly: number;
+  quarterly: number;
+  annually: number;
+}
+
+export interface SalesLog {
+  id: string;
+  date: string; // YYYY-MM-DD
+  amount: number;
+  notes: string;
+  category?: string;
+  product?: string;
+}
+
+export interface Message {
+    sender: 'user' | 'ai' | 'support';
+    text: string;
+    timestamp?: string;
+}
+
+export interface UserProfile {
+    name: string;
+    businessName: string;
+    businessCategory: string;
+    email: string;
+    phone: string;
+    address: string;
+    state: string;
+    lga: string;
+    about: string;
+    // Fix: Use the exported Currency type.
+    currency: Currency;
+}
+
+export interface Product {
+    id: string;
+    name: string;
+    category: string;
+    price?: number;
+    margin?: number;
+}
+
+export type UserPlan = 'basic' | 'pro';
+
+export interface ProjectionDetails {
+    monthlyCosts: number[];
+    monthlyIncome: number[];
+    monthlyDistribution: number[]; // Users
+    monthlyRetailPoints: number[];
+    monthlyLocations: number[];
+    monthlyChannels: number[];
+}
+
+export interface DistributionTargets {
+    users: number;
+    retailPoints: number;
+    locations: number;
+    channels: number;
+}
+
+
+export enum View {
+  DASHBOARD = 'DASHBOARD',
+  SALES = 'SALES',
+  AI_ADVISOR = 'AI_ADVISOR',
+  REPORTS = 'REPORTS',
+  TEMPLATES = 'TEMPLATES',
+  PROFILE = 'PROFILE',
+  MEETINGS = 'MEETINGS',
+  MARKETING = 'MARKETING',
+  SUPPORT_CHAT = 'SUPPORT_CHAT',
+  MESSAGES = 'MESSAGES',
+}
+
+export enum AdFormat {
+  BANNER = 'BANNER',
+  POPUP = 'POPUP',
+  SPONSORED_LISTING = 'SPONSORED_LISTING',
+}
+
+export interface AdContent {
+  title: string;
+  description: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  ctaText: string;
+  ctaLink: string;
+}
+
+export interface AdCampaign {
+  id: string;
+  format: AdFormat;
+  content: AdContent;
+  placement: string; // e.g., 'dashboard-banner', 'global-popup', 'dashboard-feed'
+}
+
+export type ActivityItem = SalesLog | (AdCampaign & { type: 'sponsored' });
+
+export interface Meeting {
+    id: string;
+    date: string;
+    title: string;
+    attendees: string[];
+    actionPoints: { text: string; completed: boolean }[];
+}
+
+export interface MarketingService {
+    id: string;
+    category: 'Digital' | 'Offline';
+    name: string;
+    description: string;
+}
+
+export interface InAppMessage {
+    id: string;
+    sender: string;
+    subject: string;
+    body: string;
+    timestamp: string;
+    isRead: boolean;
+}

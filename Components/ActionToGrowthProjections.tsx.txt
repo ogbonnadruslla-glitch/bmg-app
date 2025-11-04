@@ -1,0 +1,598 @@
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { SalesTarget, Currency, ProjectionDetails, DistributionTargets } from '../types';
+import { formatCurrencyShort, formatNumber } from '../utils';
+
+// --- Constants & Types ---
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const LOCAL_STORAGE_KEY = 'bmg-projections-template-data-v4'; 
+
+type GrowthRates = { q1: number; q2: number; q3: number; q4: number; };
+type ChannelGrowthRates = {
+    q1: { userGrowth: number; priceGrowth: number; };
+    q2: { userGrowth: number; priceGrowth: number; };
+    q3: { userGrowth: number; priceGrowth: number; };
+    q4: { userGrowth: number; priceGrowth: number; };
+};
+
+type Channel = { id: string; name: string; estUsers: number; arpu: number; aipu: number; growthRates: ChannelGrowthRates; };
+type Product = { id:string; name: string; channels: Channel[]; };
+type OpexItem = { id: string; name: string; cost: number; growthRates: GrowthRates; };
+type StaffRole = { id: string; name: string; monthlySalary: number; qty: number; growthRates: GrowthRates; };
+
+type DistributionMetric = { base: number; growthRates: GrowthRates; };
+type DistributionData = {
+    retailPoints: DistributionMetric;
+    locations: DistributionMetric;
+};
+
+type BaseMonthData = {
+    products: Product[];
+    opex: OpexItem[];
+    staff: StaffRole[];
+    distribution: DistributionData;
+};
+
+type ActiveTab = 'summary' | 'delivery' | 'distribution' | 'opex' | 'staff' | 'base';
+
+interface ProjectionsProps {
+    onBack: () => void;
+    onProjectionsUpdate: (data: { targets: SalesTarget | null, details: ProjectionDetails | null, distributionTargets: DistributionTargets | null }) => void;
+    currency: Currency;
+}
+
+// --- Helper Functions ---
+const sumArray = (arr: (number | undefined)[]) => arr.reduce((a, b) => a + (b || 0), 0);
+const createId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+// --- Initial State Factory ---
+const getInitialState = (): BaseMonthData => {
+    const defaultChannelGrowth = {
+        q1: { userGrowth: 0, priceGrowth: 0 }, q2: { userGrowth: 0, priceGrowth: 0 },
+        q3: { userGrowth: 0, priceGrowth: 0 }, q4: { userGrowth: 0, priceGrowth: 0 },
+    };
+    const defaultGrowth = { q1: 0, q2: 0, q3: 0, q4: 0 };
+
+    return {
+        products: [
+            { id: 'prod_1', name: 'Input product 1 here', channels: [
+                { id: 'ch_1', name: '', estUsers: 0, arpu: 0, aipu: 0, growthRates: JSON.parse(JSON.stringify(defaultChannelGrowth)) }, 
+                { id: 'ch_2', name: '', estUsers: 0, arpu: 0, aipu: 0, growthRates: JSON.parse(JSON.stringify(defaultChannelGrowth)) }
+            ]},
+        ],
+        opex: [
+            { id: 'op_1', name: 'Marketing', cost: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+            { id: 'op_2', name: 'Rent & Utilities', cost: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+            { id: 'op_3', name: 'Logistics', cost: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+            { id: 'op_4', name: 'Tech & Platform', cost: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+        ],
+        staff: [
+            { id: 'st_1', name: 'Sales Manager', monthlySalary: 0, qty: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) }, 
+            { id: 'st_2', name: 'Sales Agent', monthlySalary: 0, qty: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+        ],
+        distribution: {
+            retailPoints: { base: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+            locations: { base: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) },
+        },
+    };
+};
+
+// --- Main Component ---
+const ActionToGrowthProjections: React.FC<ProjectionsProps> = ({ onBack, onProjectionsUpdate, currency }) => {
+    const [baseData, setBaseData] = useState<BaseMonthData>(getInitialState);
+    const [activeTab, setActiveTab] = useState<ActiveTab>('summary');
+    const [startMonth, setStartMonth] = useState(() => new Date().getMonth());
+    const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'idle'>('idle');
+
+    const { monthHeaders, totalMonths, year1MonthsCount } = useMemo(() => {
+        const headers: { name: string, isTotal: boolean }[] = [];
+        const y1Count = 12 - startMonth;
+        const total = startMonth === 0 ? 12 : y1Count + 12;
+
+        for (let i = 0; i < y1Count; i++) {
+            headers.push({ name: MONTH_NAMES[(startMonth + i) % 12], isTotal: false });
+        }
+        if (startMonth !== 0) {
+            headers.push({ name: 'Year 1 Total', isTotal: true });
+        }
+        for (let i = 0; i < 12; i++) {
+            headers.push({ name: MONTH_NAMES[i], isTotal: false });
+        }
+        headers.push({ name: 'Year 2 Total', isTotal: true });
+
+        return { monthHeaders: headers, totalMonths: total, year1MonthsCount: y1Count };
+    }, [startMonth]);
+    
+    useEffect(() => {
+        try {
+            const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (savedData) {
+                const parsed = JSON.parse(savedData);
+                // Basic validation to ensure the loaded data structure is not from an old version
+                if (parsed.baseData && parsed.baseData.products && parsed.baseData.distribution) {
+                    setBaseData(parsed.baseData);
+                } else {
+                     setBaseData(getInitialState());
+                }
+                if (typeof parsed.startMonth === 'number') setStartMonth(parsed.startMonth);
+            }
+        } catch (error) { 
+            console.error("Failed to load projections data, resetting to default.", error);
+            setBaseData(getInitialState());
+        }
+    }, []);
+
+    useEffect(() => {
+        setSaveStatus('saving');
+        const handler = setTimeout(() => {
+            try {
+                const dataToSave = { baseData, startMonth };
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToSave));
+                setSaveStatus('saved');
+            } catch (error) { console.error("Failed to save projections data", error); }
+        }, 1000);
+        return () => clearTimeout(handler);
+    }, [baseData, startMonth]);
+
+    const handleBaseDataChange = useCallback((path: (string | number)[], value: string | number) => {
+        setBaseData(currentData => {
+            const newData = JSON.parse(JSON.stringify(currentData));
+            let currentLevel: any = newData;
+            for (let i = 0; i < path.length - 1; i++) {
+                currentLevel = currentLevel[path[i]];
+            }
+            const finalKey = path[path.length - 1];
+            if (typeof finalKey === 'string' && ['name'].includes(finalKey)) {
+                currentLevel[finalKey] = value;
+            } else {
+                currentLevel[finalKey] = Number(value) || 0;
+            }
+            return newData;
+        });
+    }, []);
+    
+    const addRow = useCallback((type: 'product' | 'channel' | 'opex' | 'staff', parentId?: string) => {
+        setBaseData(prev => {
+            const newData = JSON.parse(JSON.stringify(prev));
+            const defaultChannelGrowth = { q1: { userGrowth: 0, priceGrowth: 0 }, q2: { userGrowth: 0, priceGrowth: 0 }, q3: { userGrowth: 0, priceGrowth: 0 }, q4: { userGrowth: 0, priceGrowth: 0 },};
+            const defaultGrowth = { q1: 0, q2: 0, q3: 0, q4: 0 };
+
+            switch (type) {
+                case 'product': newData.products.push({ id: createId(), name: `Input product ${newData.products.length + 1} here`, channels: [{ id: createId(), name: '', estUsers: 0, arpu: 0, aipu: 0, growthRates: JSON.parse(JSON.stringify(defaultChannelGrowth)) }] }); break;
+                case 'channel':
+                    const product = newData.products.find((p: Product) => p.id === parentId);
+                    if (product) product.channels.push({ id: createId(), name: '', estUsers: 0, arpu: 0, aipu: 0, growthRates: JSON.parse(JSON.stringify(defaultChannelGrowth)) });
+                    break;
+                case 'opex': newData.opex.push({ id: createId(), name: 'New Opex Item', cost: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) }); break;
+                case 'staff': newData.staff.push({ id: createId(), name: 'New Role', monthlySalary: 0, qty: 0, growthRates: JSON.parse(JSON.stringify(defaultGrowth)) }); break;
+            }
+            return newData;
+        });
+    }, []);
+
+    const fullYearCalculations = useMemo(() => {
+        const getQuarter = (monthIndex: number): keyof GrowthRates => `q${Math.floor(monthIndex / 3) + 1}` as keyof GrowthRates;
+
+        const projectedData: { products: any[], opex: any[], staff: any[] } = { products: [], opex: [], staff: [] };
+
+        projectedData.products = baseData.products.map(baseProd => {
+            const channels = baseProd.channels.map(baseChannel => {
+                const estUsers = [baseChannel.estUsers], arpu = [baseChannel.arpu], aipu = [baseChannel.aipu];
+                for (let i = 1; i < totalMonths; i++) {
+                    const currentMonthInYear = (startMonth + i) % 12;
+                    const quarter = getQuarter(currentMonthInYear);
+                    estUsers[i] = estUsers[i-1] * (1 + baseChannel.growthRates[quarter].userGrowth / 100);
+                    arpu[i] = arpu[i-1] * (1 + baseChannel.growthRates[quarter].priceGrowth / 100);
+                    aipu[i] = aipu[i-1] * (1 + baseChannel.growthRates[quarter].priceGrowth / 100);
+                }
+                const monthlySales = estUsers.map((users, i) => users * arpu[i]);
+                const monthlyIncome = estUsers.map((users, i) => users * aipu[i]);
+                return { ...baseChannel, estUsers, arpu, aipu, monthlySales, monthlyIncome };
+            });
+            const totalMonthlySales = Array.from({length: totalMonths}, (_, i) => sumArray(channels.map(c => c.monthlySales[i])));
+            const totalMonthlyIncome = Array.from({length: totalMonths}, (_, i) => sumArray(channels.map(c => c.monthlyIncome[i])));
+            return { ...baseProd, channels, totalMonthlySales, totalMonthlyIncome };
+        });
+
+        projectedData.opex = baseData.opex.map(baseOpex => {
+            const costs = [baseOpex.cost];
+            for (let i = 1; i < totalMonths; i++) {
+                const currentMonthInYear = (startMonth + i) % 12;
+                const quarter = getQuarter(currentMonthInYear);
+                costs[i] = costs[i-1] * (1 + baseOpex.growthRates[quarter] / 100);
+            }
+            return { ...baseOpex, costs };
+        });
+
+        projectedData.staff = baseData.staff.map(baseStaff => {
+            const qty = [baseStaff.qty];
+             for (let i = 1; i < totalMonths; i++) {
+                const currentMonthInYear = (startMonth + i) % 12;
+                const quarter = getQuarter(currentMonthInYear);
+                qty[i] = qty[i-1] * (1 + baseStaff.growthRates[quarter] / 100);
+            }
+            const monthlyCosts = qty.map(q => q * baseStaff.monthlySalary);
+            return { ...baseStaff, qty, monthlyCosts };
+        });
+        
+        const projectedRetailPoints = [baseData.distribution.retailPoints.base];
+        const projectedLocations = [baseData.distribution.locations.base];
+
+        for (let i = 1; i < totalMonths; i++) {
+            const currentMonthInYear = (startMonth + i) % 12;
+            const quarter = getQuarter(currentMonthInYear);
+            projectedRetailPoints[i] = projectedRetailPoints[i-1] * (1 + baseData.distribution.retailPoints.growthRates[quarter] / 100);
+            projectedLocations[i] = projectedLocations[i-1] * (1 + baseData.distribution.locations.growthRates[quarter] / 100);
+        }
+
+        const monthlyChannels = Array.from({length: totalMonths}, (_, i) => {
+            return sumArray(projectedData.products.map(p => p.channels.filter((c: any) => c.estUsers[i] > 0).length));
+        });
+
+        const totalMonthlyUsers = Array.from({length: totalMonths}, (_, i) => 
+            sumArray(projectedData.products.flatMap(p => p.channels.map((c: any) => c.estUsers[i])))
+        );
+
+        const totalMonthlyOpex = Array.from({length: totalMonths}, (_, i) => sumArray(projectedData.opex.map(item => item.costs[i])));
+        const totalMonthlyStaffCost = Array.from({length: totalMonths}, (_, i) => sumArray(projectedData.staff.map(role => role.monthlyCosts[i])));
+        const totalProjectedSales = Array.from({length: totalMonths}, (_, i) => sumArray(projectedData.products.map(p => p.totalMonthlySales[i])));
+        const totalProjectedIncome = Array.from({length: totalMonths}, (_, i) => sumArray(projectedData.products.map(p => p.totalMonthlyIncome[i])));
+        const totalOperatingCost = Array.from({length: totalMonths}, (_, i) => totalMonthlyOpex[i] + totalMonthlyStaffCost[i]);
+        const netProfit = Array.from({length: totalMonths}, (_, i) => totalProjectedIncome[i] - totalOperatingCost[i]);
+        
+        const annualSales = sumArray(totalProjectedSales.slice(year1MonthsCount));
+
+        return {
+            products: projectedData.products,
+            opex: projectedData.opex,
+            staffWithCosts: projectedData.staff,
+            projectedRetailPoints, projectedLocations, monthlyChannels,
+            totalMonthlyUsers,
+            totalMonthlyOpex, totalMonthlyStaffCost, totalProjectedSales,
+            totalProjectedIncome, totalOperatingCost, netProfit, annualSales,
+            grossProfit: totalProjectedIncome
+        };
+    }, [baseData, startMonth, totalMonths, year1MonthsCount]);
+    
+    useEffect(() => {
+        const now = new Date();
+        const currentMonthAbsolute = now.getFullYear() * 12 + now.getMonth();
+        const startMonthAbsolute = new Date(now.getFullYear(), startMonth, 1).getMonth() < now.getMonth() 
+            ? now.getFullYear() * 12 + startMonth
+            : (now.getFullYear() - 1) * 12 + startMonth;
+
+        const projectionMonthIndex = currentMonthAbsolute - startMonthAbsolute;
+        
+        const monthlyTarget = (projectionMonthIndex >= 0 && projectionMonthIndex < totalMonths) 
+            ? fullYearCalculations.totalProjectedSales[projectionMonthIndex] : 0;
+            
+        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        
+        const annualTarget = fullYearCalculations.annualSales;
+        const quarterlyTarget = annualTarget / 4;
+
+        const targets: SalesTarget = {
+            annually: annualTarget, monthly: monthlyTarget,
+            weekly: monthlyTarget / 4.33, daily: monthlyTarget / daysInMonth,
+            quarterly: quarterlyTarget, 
+        };
+
+        const totalMonthlyUsers = Array.from({length: totalMonths}, (_, i) => 
+            sumArray(fullYearCalculations.products.flatMap(p => p.channels.map((c: any) => c.estUsers[i])))
+        );
+        
+        const distributionTargetsForMonth: DistributionTargets | null = (projectionMonthIndex >= 0 && projectionMonthIndex < totalMonths) 
+            ? {
+                users: totalMonthlyUsers[projectionMonthIndex],
+                retailPoints: fullYearCalculations.projectedRetailPoints[projectionMonthIndex],
+                locations: fullYearCalculations.projectedLocations[projectionMonthIndex],
+                channels: fullYearCalculations.monthlyChannels[projectionMonthIndex]
+            } 
+            : null;
+
+        const details: ProjectionDetails = {
+            monthlyCosts: fullYearCalculations.totalOperatingCost,
+            monthlyIncome: fullYearCalculations.netProfit,
+            monthlyDistribution: totalMonthlyUsers,
+            monthlyRetailPoints: fullYearCalculations.projectedRetailPoints,
+            monthlyLocations: fullYearCalculations.projectedLocations,
+            monthlyChannels: fullYearCalculations.monthlyChannels,
+        };
+
+        onProjectionsUpdate({ targets, details, distributionTargets: distributionTargetsForMonth });
+
+    }, [fullYearCalculations, startMonth, totalMonths, onProjectionsUpdate]);
+
+    const handleReset = () => { if(window.confirm("Are you sure you want to reset all data in this template? This cannot be undone.")) { setBaseData(getInitialState()); } };
+    const handlePrint = () => window.print();
+    const handleEmailReport = () => {
+        const subject = `Action to Growth Projections Summary`;
+        const body = `Here is the annual summary from the Action to Growth Projections template:\n\n- Total Projected Sales: ${formatCurrencyShort(sumArray(fullYearCalculations.totalProjectedSales), currency)}\n- Total Projected Income: ${formatCurrencyShort(sumArray(fullYearCalculations.totalProjectedIncome), currency)}\n- Total Operating Cost: ${formatCurrencyShort(sumArray(fullYearCalculations.totalOperatingCost), currency)}\n- **Projected Net Profit:** ${formatCurrencyShort(sumArray(fullYearCalculations.netProfit), currency)}\n\n---\nSent from BMG Enterprise Solutions`;
+        window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body.trim())}`;
+    };
+
+    const renderMonthHeaders = (isStaff = false) => (
+        <>
+            {monthHeaders.map(h => <th key={h.name} className={`p-2 border text-center font-semibold ${h.isTotal ? 'bg-gray-100' : ''}`}>{isStaff && !h.isTotal ? `${h.name} Qty` : h.name}</th>)}
+        </>
+    );
+
+    const renderCalculatedCells = (values: number[], isProfit = false, isCurrency = true) => {
+        const formatFn = isCurrency ? (val: number) => formatCurrencyShort(val, currency) : formatNumber;
+        const cells = [];
+        let runningTotal = 0;
+
+        // Year 1
+        if (year1MonthsCount > 0 && year1MonthsCount < 12) {
+            for (let i = 0; i < year1MonthsCount; i++) {
+                cells.push(<td key={`y1-m${i}`} className={`p-2 border text-right bg-gray-50 ${isProfit && values[i] < 0 ? 'text-red-600' : 'text-gray-800'}`}>{formatFn(values[i])}</td>);
+                runningTotal += values[i];
+            }
+            cells.push(<td key="y1-total" className={`p-2 border text-right font-bold bg-gray-200 ${isProfit && runningTotal < 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatFn(runningTotal)}</td>);
+            runningTotal = 0;
+        }
+
+        // Year 2
+        const year2StartIdx = year1MonthsCount;
+        for (let i = year2StartIdx; i < year2StartIdx + 12; i++) {
+            cells.push(<td key={`y2-m${i}`} className={`p-2 border text-right bg-gray-50 ${isProfit && values[i] < 0 ? 'text-red-600' : 'text-gray-800'}`}>{formatFn(values[i])}</td>);
+            runningTotal += values[i];
+        }
+        cells.push(<td key="y2-total" className={`p-2 border text-right font-bold bg-gray-200 ${isProfit && runningTotal < 0 ? 'text-red-600' : 'text-gray-900'}`}>{formatFn(runningTotal)}</td>);
+        
+        return <>{cells}</>;
+    };
+    
+    const renderContent = () => {
+        switch(activeTab) {
+            case 'summary': return (
+                <div>
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6"><p className="text-sm text-yellow-800"><span className='font-bold'>GUIDANCE NOTE:</span> This Summary is your control tower. If Net Profit is negative or below target, go to the 'Base Month Setup' tab to adjust your base figures or growth rates.</p></div>
+                    <table className="w-full border-collapse text-sm">
+                        <thead><tr><th className="p-2 border text-left font-semibold">ITEM</th>{renderMonthHeaders()}</tr></thead>
+                        <tbody>
+                            <tr className="bg-green-50"><td className="p-2 border font-bold" colSpan={monthHeaders.length + 1}>SALES</td></tr>
+                            {fullYearCalculations.products.map(p => <tr key={p.id}><td className="p-2 border pl-6">{p.name}</td>{renderCalculatedCells(p.totalMonthlySales)}</tr>)}
+                            <tr className="font-bold bg-gray-100"><td className="p-2 border">Total Projected Sales</td>{renderCalculatedCells(fullYearCalculations.totalProjectedSales)}</tr>
+                            <tr className="bg-green-50"><td className="p-2 border font-bold" colSpan={monthHeaders.length + 1}>INCOME</td></tr>
+                            {fullYearCalculations.products.map(p => <tr key={p.id}><td className="p-2 border pl-6">{p.name}</td>{renderCalculatedCells(p.totalMonthlyIncome)}</tr>)}
+                            <tr className="font-bold bg-gray-100"><td className="p-2 border">Total Projected Income</td>{renderCalculatedCells(fullYearCalculations.totalProjectedIncome)}</tr>
+                            <tr className="bg-green-50"><td className="p-2 border font-bold" colSpan={monthHeaders.length + 1}>COST</td></tr>
+                            <tr><td className="p-2 border pl-6">Opex (subtotal)</td>{renderCalculatedCells(fullYearCalculations.totalMonthlyOpex)}</tr>
+                            <tr><td className="p-2 border pl-6">Staff Costs (subtotal)</td>{renderCalculatedCells(fullYearCalculations.totalMonthlyStaffCost)}</tr>
+                            <tr className="font-bold bg-gray-100"><td className="p-2 border">Total Operating Cost</td>{renderCalculatedCells(fullYearCalculations.totalOperatingCost)}</tr>
+                            <tr className="font-bold bg-yellow-100"><td className="p-2 border">Gross Profit</td>{renderCalculatedCells(fullYearCalculations.grossProfit, true)}</tr>
+                            <tr className="font-bold bg-yellow-200"><td className="p-2 border">Net Profit</td>{renderCalculatedCells(fullYearCalculations.netProfit, true)}</tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+            case 'delivery': return (
+                <div>
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6 text-sm text-yellow-800"><p><span className='font-bold'>NOTE:</span> This sheet is auto-calculated. To make changes, edit the 'Base Month Setup' sheet.</p></div>
+                    <table className="w-full border-collapse text-sm">
+                        <thead><tr><th className="p-2 border text-left font-semibold">Product Line</th><th className="p-2 border text-left font-semibold">Channel</th><th className="p-2 border text-left font-semibold">Metric</th>{renderMonthHeaders()}</tr></thead>
+                        <tbody>
+                            {fullYearCalculations.products.map(p => (
+                                <React.Fragment key={p.id}>
+                                    <tr className="bg-green-50"><td className="p-2 border font-bold" colSpan={3}>{p.name} - SALES</td>{renderCalculatedCells(p.totalMonthlySales)}</tr>
+                                    {p.channels.map((c: any) => (
+                                        <React.Fragment key={c.id}>
+                                            <tr><td rowSpan={3} className="p-2 border align-top">{p.name}</td><td rowSpan={3} className="p-2 border align-top">{c.name}</td><td className="p-2 border">Est. Users</td>{renderCalculatedCells(c.estUsers, false, false)}</tr>
+                                            <tr><td className="p-2 border">ARPU</td>{renderCalculatedCells(c.arpu)}</tr>
+                                            <tr className="bg-gray-100"><td className="p-2 border font-semibold">Sales</td>{renderCalculatedCells(c.monthlySales)}</tr>
+                                        </React.Fragment>
+                                    ))}
+                                    <tr className="bg-yellow-50"><td className="p-2 border font-bold" colSpan={3}>{p.name} - INCOME</td>{renderCalculatedCells(p.totalMonthlyIncome)}</tr>
+                                    {p.channels.map((c: any) => (
+                                         <React.Fragment key={`${c.id}-income`}>
+                                             <tr><td rowSpan={3} className="p-2 border align-top">{p.name}</td><td rowSpan={3} className="p-2 border align-top">{c.name}</td><td className="p-2 border">Est. Users</td>{renderCalculatedCells(c.estUsers, false, false)}</tr>
+                                             <tr><td className="p-2 border">AIPU</td>{renderCalculatedCells(c.aipu)}</tr>
+                                             <tr className="bg-gray-100"><td className="p-2 border font-semibold">Income</td>{renderCalculatedCells(c.monthlyIncome)}</tr>
+                                         </React.Fragment>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+            case 'distribution': return (
+                <div>
+                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6 text-sm text-yellow-800"><p><span className='font-bold'>NOTE:</span> This data is auto-calculated. Edit base values and growth rates in the 'Base Month Setup' tab.</p></div>
+                    <table className="w-full border-collapse text-sm">
+                        <thead><tr><th className="p-2 border text-left font-semibold">Metric</th>{renderMonthHeaders()}</tr></thead>
+                        <tbody>
+                            {/* FIX: Use the correctly calculated totalMonthlyUsers array */}
+                            <tr className="font-bold bg-gray-100"><td className="p-2 border">Total Users</td>{renderCalculatedCells(fullYearCalculations.totalMonthlyUsers, false, false)}</tr>
+                            <tr className="font-bold bg-gray-100"><td className="p-2 border">Total Active Channels</td>{renderCalculatedCells(fullYearCalculations.monthlyChannels, false, false)}</tr>
+                            <tr><td className="p-2 border">Retail Points</td>{renderCalculatedCells(fullYearCalculations.projectedRetailPoints, false, false)}</tr>
+                            <tr><td className="p-2 border">Locations/Clusters</td>{renderCalculatedCells(fullYearCalculations.projectedLocations, false, false)}</tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+            case 'opex': return (
+                <div>
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6 text-sm text-yellow-800"><p><span className='font-bold'>NOTE:</span> This sheet is auto-calculated. To make changes, edit the 'Base Month Setup' sheet.</p></div>
+                    <table className="w-full border-collapse text-sm">
+                        <thead><tr><th className="p-2 border text-left font-semibold">Cost Item</th>{renderMonthHeaders()}</tr></thead>
+                        <tbody>
+                            {fullYearCalculations.opex.map(item => (<tr key={item.id}><td className="p-2 border">{item.name}</td>{renderCalculatedCells(item.costs)}</tr>))}
+                            <tr className="font-bold bg-gray-200"><td className="p-2 border">Total Opex</td>{renderCalculatedCells(fullYearCalculations.totalMonthlyOpex)}</tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+            case 'staff': return (
+                <div>
+                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6 text-sm text-yellow-800"><p><span className='font-bold'>NOTE:</span> This sheet is auto-calculated. To make changes, edit the 'Base Month Setup' sheet.</p></div>
+                    <table className="w-full border-collapse text-sm">
+                        <thead><tr><th className="p-2 border text-left font-semibold">Staff Role</th><th className="p-2 border text-left font-semibold">Monthly Salary</th>{renderMonthHeaders(true)}</tr></thead>
+                        <tbody>
+                             {fullYearCalculations.staffWithCosts.map(role => (
+                                <tr key={role.id}>
+                                    <td className="p-2 border">{role.name}</td>
+                                    <td className="p-2 border text-right">{formatCurrencyShort(role.monthlySalary, currency)}</td>
+                                    {renderCalculatedCells(role.qty, false, false)}
+                                </tr>
+                            ))}
+                             <tr className="font-bold bg-gray-200"><td colSpan={2} className="p-2 border text-right">Total Staff Cost</td>{renderCalculatedCells(fullYearCalculations.totalMonthlyStaffCost)}</tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+            case 'base': 
+                const quarters: (keyof GrowthRates)[] = ['q1', 'q2', 'q3', 'q4'];
+                return (
+                 <div>
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mb-6 text-sm text-yellow-800 space-y-1"><p><span className='font-bold'>ACTION REQUIRED:</span> This is your main data entry sheet. Fill in all your starting figures and desired quarterly growth rates (%) here. The rest of the template will update automatically.</p></div>
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-2">Delivery Plan - Base Figures & Growth Levers</h3>
+                            {baseData.products.map((p, pIdx) => (
+                                <div key={p.id} className="border-t pt-4 mt-4 first:border-t-0">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <label className="font-bold">Product:</label>
+                                        <input type="text" value={p.name} onChange={e => handleBaseDataChange(['products', pIdx, 'name'], e.target.value)} className="p-1 border-gray-300 rounded-md text-sm font-bold flex-grow" />
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead><tr className="bg-gray-50">
+                                                <th className="p-2 text-left" rowSpan={2}>Channel</th><th className="p-2 text-left" rowSpan={2}>Est. Users</th><th className="p-2 text-left" rowSpan={2}>ARPU</th><th className="p-2 text-left" rowSpan={2}>AIPU</th>
+                                                <th className="p-2 text-center border-l" colSpan={4}>Quarterly User Growth (%)</th><th className="p-2 text-center border-l" colSpan={4}>Quarterly Price/ARPU Growth (%)</th>
+                                            </tr>
+                                            <tr className="bg-gray-50">
+                                                {quarters.map(q => <th key={`${q}u`} className="p-1 text-center font-medium border-l">{q.toUpperCase()}</th>)}
+                                                {quarters.map(q => <th key={`${q}p`} className="p-1 text-center font-medium border-l">{q.toUpperCase()}</th>)}
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                                {p.channels.map((c, cIdx) => (
+                                                    <tr key={c.id}>
+                                                        <td className="p-1"><input type="text" value={c.name} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'name'], e.target.value)} placeholder="Input channel name (e.g., Retail)" className="w-full p-1 border-gray-300 rounded-md placeholder-gray-400"/></td>
+                                                        <td className="p-1"><input type="number" value={c.estUsers} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'estUsers'], e.target.value)} className="w-24 p-1 border-gray-300 rounded-md"/></td>
+                                                        <td className="p-1"><input type="number" value={c.arpu} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'arpu'], e.target.value)} className="w-24 p-1 border-gray-300 rounded-md"/></td>
+                                                        <td className="p-1"><input type="number" value={c.aipu} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'aipu'], e.target.value)} className="w-24 p-1 border-gray-300 rounded-md"/></td>
+                                                        {quarters.map(q => <td key={`${q}u_in`} className="p-1 border-l"><input type="number" value={c.growthRates[q].userGrowth} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'growthRates', q, 'userGrowth'], e.target.value)} className="w-16 p-1 border-gray-300 rounded-md"/></td>)}
+                                                        {quarters.map(q => <td key={`${q}p_in`} className="p-1 border-l"><input type="number" value={c.growthRates[q].priceGrowth} onChange={e => handleBaseDataChange(['products', pIdx, 'channels', cIdx, 'growthRates', q, 'priceGrowth'], e.target.value)} className="w-16 p-1 border-gray-300 rounded-md"/></td>)}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button onClick={() => addRow('channel', p.id)} className="mt-2 text-sm text-green-600 hover:text-green-800">+ Add Channel</button>
+                                </div>
+                            ))}
+                            <button onClick={() => addRow('product')} className="mt-4 px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-md shadow-sm hover:bg-green-700">Add Product Line</button>
+                        </div>
+                        
+                        <div>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-2">Distribution Spread - Base & Growth</h3>
+                            <table className="w-full text-sm">
+                                <thead><tr className="bg-gray-50"><th className="p-2 text-left">Metric</th><th className="p-2 text-left">Base Figure</th>{quarters.map(q => <th key={q} className="p-1 text-center font-medium border-l">{q.toUpperCase()} Growth %</th>)}</tr></thead>
+                                <tbody>
+                                    <tr>
+                                        <td className="p-1 font-medium">Retail Points</td>
+                                        <td className="p-1"><input type="number" value={baseData.distribution.retailPoints.base} onChange={e => handleBaseDataChange(['distribution', 'retailPoints', 'base'], e.target.value)} className="w-28 p-1 border-gray-300 rounded-md"/></td>
+                                        {quarters.map(q => <td key={q} className="p-1 border-l"><input type="number" value={baseData.distribution.retailPoints.growthRates[q]} onChange={e => handleBaseDataChange(['distribution', 'retailPoints', 'growthRates', q], e.target.value)} className="w-20 p-1 border-gray-300 rounded-md"/></td>)}
+                                    </tr>
+                                    <tr>
+                                        <td className="p-1 font-medium">Locations/Clusters</td>
+                                        <td className="p-1"><input type="number" value={baseData.distribution.locations.base} onChange={e => handleBaseDataChange(['distribution', 'locations', 'base'], e.target.value)} className="w-28 p-1 border-gray-300 rounded-md"/></td>
+                                        {quarters.map(q => <td key={q} className="p-1 border-l"><input type="number" value={baseData.distribution.locations.growthRates[q]} onChange={e => handleBaseDataChange(['distribution', 'locations', 'growthRates', q], e.target.value)} className="w-20 p-1 border-gray-300 rounded-md"/></td>)}
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                             <div>
+                                <h3 className="text-xl font-semibold text-gray-800 mb-2">Opex Costs - Base & Growth</h3>
+                                <table className="w-full text-sm">
+                                    <thead><tr className="bg-gray-50"><th className="p-2 text-left">Cost Item</th><th className="p-2 text-left">Base Cost</th>{quarters.map(q => <th key={q} className="p-1 text-center font-medium border-l">{q.toUpperCase()} Growth %</th>)}</tr></thead>
+                                    <tbody>
+                                        {baseData.opex.map((item, idx) => (
+                                            <tr key={item.id}>
+                                                <td className="p-1"><input type="text" value={item.name} onChange={e => handleBaseDataChange(['opex', idx, 'name'], e.target.value)} className="w-full p-1 border-gray-300 rounded-md"/></td>
+                                                <td className="p-1"><input type="number" value={item.cost} onChange={e => handleBaseDataChange(['opex', idx, 'cost'], e.target.value)} className="w-28 p-1 border-gray-300 rounded-md"/></td>
+                                                {quarters.map(q => <td key={q} className="p-1 border-l"><input type="number" value={item.growthRates[q]} onChange={e => handleBaseDataChange(['opex', idx, 'growthRates', q], e.target.value)} className="w-16 p-1 border-gray-300 rounded-md"/></td>)}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <button onClick={() => addRow('opex')} className="mt-2 text-sm text-green-600 hover:text-green-800">+ Add Opex Item</button>
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-semibold text-gray-800 mb-2">Staff - Base & Growth</h3>
+                                <table className="w-full text-sm">
+                                     <thead><tr className="bg-gray-50"><th className="p-2 text-left">Role</th><th className="p-2 text-left">Salary</th><th className="p-2 text-left">Qty</th>{quarters.map(q => <th key={q} className="p-1 text-center font-medium border-l">{q.toUpperCase()} Qty Growth %</th>)}</tr></thead>
+                                      <tbody>
+                                        {baseData.staff.map((role, idx) => (
+                                            <tr key={role.id}>
+                                                <td className="p-1"><input type="text" value={role.name} onChange={e => handleBaseDataChange(['staff', idx, 'name'], e.target.value)} className="w-full p-1 border-gray-300 rounded-md"/></td>
+                                                <td className="p-1"><input type="number" value={role.monthlySalary} onChange={e => handleBaseDataChange(['staff', idx, 'monthlySalary'], e.target.value)} placeholder="Salary (per person)" className="w-24 p-1 border-gray-300 rounded-md placeholder-gray-400"/></td>
+                                                <td className="p-1"><input type="number" value={role.qty} onChange={e => handleBaseDataChange(['staff', idx, 'qty'], e.target.value)} placeholder="# of staff" className="w-20 p-1 border-gray-300 rounded-md placeholder-gray-400"/></td>
+                                                {quarters.map(q => <td key={q} className="p-1 border-l"><input type="number" value={role.growthRates[q]} onChange={e => handleBaseDataChange(['staff', idx, 'growthRates', q], e.target.value)} className="w-16 p-1 border-gray-300 rounded-md"/></td>)}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                <button onClick={() => addRow('staff')} className="mt-2 text-sm text-green-600 hover:text-green-800">+ Add Staff Role</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+            default: return null;
+        }
+    }
+
+    const tabs: {id: ActiveTab, label: string}[] = [
+        {id: 'summary', label: 'Summary'}, {id: 'delivery', label: 'Delivery Plan'},
+        {id: 'distribution', label: 'Distribution'}, {id: 'opex', label: 'Opex Costs'},
+        {id: 'staff', label: 'Staff Costs'}, {id: 'base', label: 'Base Month Setup'},
+    ];
+    
+    const SaveStatusIndicator = () => {
+        let text = '';
+        if (saveStatus === 'saving') text = 'Saving...';
+        if (saveStatus === 'saved') text = '✓ All changes saved';
+        return <span className="text-sm text-gray-500 transition-opacity duration-300">{text}</span>;
+    };
+
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <style>{`.placeholder-gray-400::placeholder { color: #9ca3af; opacity: 1; }`}</style>
+            <div className="printable-area">
+                <h1 className="text-3xl font-bold text-gray-900">Action to Growth Projections</h1>
+                 <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm space-y-6 mt-6">
+                    <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 no-print">
+                        <h3 className="font-bold text-yellow-800">📝 HOW TO USE THIS TEMPLATE</h3>
+                        <p className="text-sm text-yellow-700 mt-2"><b>Step 1:</b> Select your planning 'Start Month' below.<br/><b>Step 2:</b> Go to the 'Base Month Setup' tab and enter your starting figures and desired quarterly growth rates.<br/><b>Step 3:</b> Review your full-year projections on the other tabs. All data is saved automatically!</p>
+                    </div>
+                    
+                    <div className="no-print">
+                        <label htmlFor="startMonth" className="block text-sm font-medium text-gray-700">Select Start Month</label>
+                        <select id="startMonth" value={startMonth} onChange={e => setStartMonth(Number(e.target.value))} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md">
+                            {MONTH_NAMES.map((name, index) => <option key={index} value={index}>{name}</option>)}
+                        </select>
+                    </div>
+
+                     <div className="border-b border-gray-200"><nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto no-print" aria-label="Tabs">{tabs.map(t=><button key={t.id} onClick={() => setActiveTab(t.id)} className={`${activeTab === t.id ? 'border-yellow-500 text-yellow-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}>{t.label}</button>)}</nav></div>
+                    <div className="overflow-x-auto">{renderContent()}</div>
+                </div>
+            </div>
+            <div className="no-print mt-8 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm sticky bottom-4">
+                 <button onClick={onBack} className="text-green-600 hover:text-green-800 font-medium">&larr; Back to Templates</button>
+                 <SaveStatusIndicator />
+                 <div className="flex flex-wrap justify-center sm:justify-end items-center gap-2">
+                    <button onClick={handleReset} className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Reset</button>
+                    <button onClick={handlePrint} className="px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Print / Save as PDF</button>
+                    <button onClick={handleEmailReport} className="px-4 py-2 text-sm font-medium bg-green-600 text-white border border-transparent rounded-md shadow-sm hover:bg-green-700">Email Report</button>
+                 </div>
+            </div>
+        </div>
+    );
+};
+
+export default ActionToGrowthProjections;

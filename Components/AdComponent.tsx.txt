@@ -1,0 +1,130 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { AdCampaign, AdFormat } from '../types';
+
+interface AdComponentProps {
+    campaign: AdCampaign;
+    onImpression: (id: string) => void;
+    onClick: (id: string, link: string) => void;
+    onClose?: (id: string) => void;
+}
+
+const AdComponent: React.FC<AdComponentProps> = ({ campaign, onImpression, onClick, onClose }) => {
+    const adRef = useRef<HTMLDivElement | HTMLLIElement | null>(null);
+    const [email, setEmail] = useState('');
+    const [submitted, setSubmitted] = useState(false);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    onImpression(campaign.id);
+                    observer.disconnect();
+                }
+            },
+            { threshold: 0.5 }
+        );
+
+        const currentRef = adRef.current;
+        if (currentRef) {
+            observer.observe(currentRef);
+        }
+
+        return () => {
+            if (currentRef) {
+                observer.unobserve(currentRef);
+            }
+        };
+    }, [campaign.id, onImpression]);
+
+    const handleAdClick = () => {
+        onClick(campaign.id, campaign.content.ctaLink);
+        window.open(campaign.content.ctaLink, '_blank');
+        if (campaign.format === AdFormat.POPUP && onClose) {
+            onClose(campaign.id);
+        }
+    };
+
+    const handleRegistration = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email) return;
+        console.log(`WEBINAR REGISTRATION: Campaign ID ${campaign.id}, Email: ${email}`);
+        onClick(campaign.id, '#webinar-registration'); // Log the click interaction
+        setSubmitted(true);
+        setTimeout(() => {
+            if (onClose) onClose(campaign.id);
+        }, 3000);
+    };
+
+    switch (campaign.format) {
+        case AdFormat.BANNER:
+            return (
+                <div ref={adRef as React.RefObject<HTMLDivElement>} className="bg-gradient-to-r from-green-500 to-yellow-400 p-6 rounded-xl border border-gray-200 shadow-lg text-white my-6 flex items-center justify-between cursor-pointer relative overflow-hidden" onClick={handleAdClick}>
+                    <div style={{ backgroundImage: `url(${campaign.content.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} className="absolute inset-0 opacity-20 rounded-xl"></div>
+                    <div className="relative z-10">
+                        <h3 className="text-xl font-bold">{campaign.content.title}</h3>
+                        <p className="text-sm">{campaign.content.description}</p>
+                    </div>
+                    <button className="relative z-10 bg-white text-green-600 font-bold py-2 px-4 rounded-lg shadow-md hover:bg-gray-100 transition-colors flex-shrink-0">
+                        {campaign.content.ctaText}
+                    </button>
+                </div>
+            );
+        
+        case AdFormat.POPUP:
+            return (
+                <div ref={adRef as React.RefObject<HTMLDivElement>} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md relative animate-fade-in-up">
+                        {onClose && (
+                            <button onClick={() => onClose(campaign.id)} className="absolute top-2 right-2 text-gray-400 hover:text-gray-800 z-20">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        )}
+                        {campaign.content.imageUrl && <img src={campaign.content.imageUrl} alt={campaign.content.title} className="w-full h-48 object-cover rounded-t-xl" />}
+                        <div className="p-6 text-center">
+                            <h3 className="text-2xl font-bold text-gray-900">{campaign.content.title}</h3>
+                            <p className="text-gray-600 my-3">{campaign.content.description}</p>
+                            {submitted ? (
+                                <div className="mt-4 p-3 bg-green-100 text-green-800 rounded-lg">
+                                    <p className="font-semibold">Thank you for registering!</p>
+                                    <p className="text-sm">We've sent a confirmation to your email.</p>
+                                </div>
+                            ) : (
+                                <form onSubmit={handleRegistration} className="mt-4 space-y-3">
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="Enter your email address"
+                                        required
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
+                                    />
+                                    <button type="submit" className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-md transition-colors">
+                                        {campaign.content.ctaText}
+                                    </button>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        
+        case AdFormat.SPONSORED_LISTING:
+             return (
+                <li ref={adRef as React.RefObject<HTMLLIElement>} className="py-3 flex justify-between items-center bg-yellow-50/50 border-l-4 border-yellow-400 px-4 rounded-md cursor-pointer hover:bg-yellow-50" onClick={handleAdClick}>
+                    <div>
+                        <div className="flex items-center space-x-2">
+                           <p className="text-gray-800 font-medium">{campaign.content.title}</p>
+                           <span className="text-xs font-bold text-yellow-800 bg-yellow-200 px-2 py-0.5 rounded-full">Sponsored</span>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-1">{campaign.content.description}</p>
+                    </div>
+                    <p className="text-green-600 font-semibold">{campaign.content.ctaText}</p>
+                </li>
+             );
+
+        default:
+            return null;
+    }
+};
+
+export default AdComponent;

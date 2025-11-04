@@ -1,0 +1,50 @@
+import React from 'react';
+import { Meeting } from '../types';
+import { formatDate } from '../utils';
+
+interface MeetingsProps {
+    meetings: Meeting[];
+}
+
+const Meetings: React.FC<MeetingsProps> = ({ meetings }) => {
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <h1 className="text-3xl font-bold text-gray-900">Check-Ins & Meetings</h1>
+            <div className="bg-white p-6 md:p-8 rounded-xl border border-gray-200 shadow-sm">
+                <p className="text-gray-600 mb-6">
+                    Review your scheduled meetings and agreed action points from previous check-ins with your BMG business coach.
+                </p>
+                <div className="space-y-8">
+                    {meetings.map(meeting => (
+                        <div key={meeting.id} className="border-b border-gray-200 pb-6 last:border-b-0">
+                            <div className="flex flex-col sm:flex-row justify-between sm:items-center">
+                                <h2 className="text-xl font-semibold text-gray-800">{meeting.title}</h2>
+                                <p className="text-sm text-gray-500 mt-1 sm:mt-0">{new Date(meeting.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, {formatDate(meeting.date)}</p>
+                            </div>
+                            <div className="mt-4">
+                                <h3 className="font-semibold text-gray-700">Action Points:</h3>
+                                <ul className="mt-2 space-y-3">
+                                    {meeting.actionPoints.map((point, index) => (
+                                        <li key={index} className="flex items-center">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={point.completed} 
+                                                readOnly 
+                                                className="h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                            />
+                                            <span className={`ml-3 text-gray-600 ${point.completed ? 'line-through text-gray-400' : ''}`}>
+                                                {point.text}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default Meetings;

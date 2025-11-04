@@ -1,0 +1,316 @@
+import React, { useState, useMemo } from 'react';
+import { SalesLog, UserProfile, SalesTarget, Currency, Product, ProjectionDetails, UserPlan } from '../types';
+import { generateReportAnalysis } from '../services/geminiService';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { formatCurrency, formatDate, formatCurrencyShort, formatNumber } from '../utils';
+
+type ReportFilter = 'Sales Revenue' | 'Cost' | 'Income' | 'Distribution' | 'Targets';
+
+const Spinner: React.FC = () => (
+    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+);
+
+const StatCard: React.FC<{ title: string; value: string; }> = ({ title, value }) => (
+    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <h3 className="text-sm font-medium text-gray-500">{title}</h3>
+        <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+    </div>
+);
+
+const UpgradePrompt: React.FC = () => (
+    <div className="flex flex-col items-center justify-center h-full text-center bg-gray-50 p-8 rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-yellow-500 mb-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clipRule="evenodd" />
+        </svg>
+        <h3 className="text-xl font-semibold text-gray-800">Unlock Advanced Analytics</h3>
+        <p className="text-gray-600 mt-2 max-w-md">This report is a Pro feature. Upgrade your plan to access detailed cost, income, and distribution projections linked directly from your BMG Templates.</p>
+        <button className="mt-4 px-6 py-2 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold rounded-lg shadow-md transition-colors text-sm">
+            Upgrade to Pro
+        </button>
+    </div>
+);
+
+interface ReportsProps {
+    salesLogs: SalesLog[];
+    userProfile: UserProfile;
+    targets: SalesTarget;
+    currency: Currency;
+    products: Product[];
+    projectionDetails: ProjectionDetails | null;
+    userPlan: UserPlan;
+}
+
+const Reports: React.FC<ReportsProps> = ({ salesLogs, userProfile, targets, currency, products, projectionDetails, userPlan }) => {
+    const [range, setRange] = useState('7days');
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
+    const [aiAnalysis, setAiAnalysis] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [activeFilter, setActiveFilter] = useState<ReportFilter>('Sales Revenue');
+
+    const { filteredLogs, dateRange, daysInRange } = useMemo(() => {
+        const now = new Date();
+        let startDate = new Date();
+        let endDate = new Date(now.setHours(23, 59, 59, 999));
+        switch (range) {
+            case '7days': startDate.setDate(now.getDate() - 6); break;
+            case '30days': startDate.setDate(now.getDate() - 29); break;
+            case 'thisMonth': startDate = new Date(now.getFullYear(), now.getMonth(), 1); break;
+            case 'thisQuarter': const q = Math.floor(now.getMonth() / 3); startDate = new Date(now.getFullYear(), q * 3, 1); break;
+            case 'custom': startDate = customStart ? new Date(customStart) : new Date(0); endDate = customEnd ? new Date(customEnd) : new Date(); endDate.setHours(23, 59, 59, 999); break;
+        }
+        startDate.setHours(0, 0, 0, 0);
+        const logs = salesLogs.filter(log => { const d = new Date(log.date); return d >= startDate && d <= endDate; });
+        const diff = Math.max(1, Math.ceil(Math.abs(endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+        return { filteredLogs: logs, dateRange: { start: startDate.toISOString().split('T')[0], end: endDate.toISOString().split('T')[0] }, daysInRange: diff };
+    }, [range, salesLogs, customStart, customEnd]);
+
+    const dailyIncomeData = useMemo(() => {
+        const incomeByDate: { [date: string]: number } = {};
+        filteredLogs.forEach(log => {
+            const date = log.date;
+            if (!incomeByDate[date]) {
+                incomeByDate[date] = 0;
+            }
+            const product = products.find(p => p.name === log.product);
+            if (product && product.margin) {
+                incomeByDate[date] += product.margin;
+            }
+        });
+
+        const allDatesInRange = Array.from({ length: daysInRange }, (_, i) => {
+            const d = new Date(dateRange.start);
+            const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+            const correctedDate = new Date(d.getTime() + userTimezoneOffset);
+            correctedDate.setDate(correctedDate.getDate() + i);
+            return correctedDate.toISOString().split('T')[0];
+        });
+
+        return allDatesInRange.map(date => ({
+            date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            Income: incomeByDate[date] || 0,
+        }));
+    }, [filteredLogs, products, dateRange.start, daysInRange]);
+
+    const kpis = useMemo(() => {
+        const totalRevenue = filteredLogs.reduce((sum, log) => sum + log.amount, 0);
+        const totalSales = filteredLogs.length;
+        const periodTarget = targets.daily * daysInRange;
+        const targetAchievement = periodTarget > 0 ? (totalRevenue / periodTarget) * 100 : 0;
+        return { totalRevenue, totalSales, targetAchievement };
+    }, [filteredLogs, targets.daily, daysInRange]);
+
+    const topProductsData = useMemo(() => {
+        const salesByProduct: { [key: string]: { revenue: number; units: number; income: number } } = {};
+        filteredLogs.forEach(log => {
+            const productKey = log.product || 'Uncategorized';
+            if (!salesByProduct[productKey]) {
+                salesByProduct[productKey] = { revenue: 0, units: 0, income: 0 };
+            }
+            salesByProduct[productKey].revenue += log.amount;
+            salesByProduct[productKey].units += 1;
+            
+            const productRef = products.find(p => p.name === log.product);
+            if (productRef && productRef.margin) {
+                salesByProduct[productKey].income += productRef.margin;
+            }
+        });
+        return Object.entries(salesByProduct)
+            .map(([name, data]) => ({ name, ...data }))
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10);
+    }, [filteredLogs, products]);
+
+    const handleGenerateAnalysis = async () => {
+        setIsLoading(true); setAiAnalysis('');
+        const analysis = await generateReportAnalysis(filteredLogs, dateRange);
+        setAiAnalysis(analysis); setIsLoading(false);
+    };
+
+    const renderNoData = (componentName: string) => <div className="flex items-center justify-center h-full text-gray-500"><p>No data available for {componentName} in this period.</p></div>;
+    
+    const renderContent = () => {
+        const isProFeature = ['Cost', 'Distribution'].includes(activeFilter);
+        if (isProFeature && userPlan === 'basic') {
+            return <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-96"><UpgradePrompt /></div>;
+        }
+
+        switch(activeFilter) {
+            case 'Sales Revenue':
+                return (
+                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Top Products Performance</h2>
+                        {topProductsData.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-gray-500">
+                                    <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                                        <tr>
+                                            <th scope="col" className="px-6 py-3">Product Name</th>
+                                            <th scope="col" className="px-6 py-3 text-right">Units Sold</th>
+                                            <th scope="col" className="px-6 py-3 text-right">Total Revenue</th>
+                                            <th scope="col" className="px-6 py-3 text-right">Total Income</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {topProductsData.map((product) => (
+                                            <tr key={product.name} className="bg-white border-b">
+                                                <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{product.name}</th>
+                                                <td className="px-6 py-4 text-right">{product.units.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-right font-semibold text-gray-800">{formatCurrencyShort(product.revenue, currency)}</td>
+                                                <td className="px-6 py-4 text-right font-semibold text-green-600">{formatCurrencyShort(product.income, currency)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : renderNoData('Top Products')}
+                     </div>
+                );
+            case 'Cost':
+            case 'Distribution':
+                 const data = activeFilter === 'Cost' ? projectionDetails?.monthlyCosts : projectionDetails?.monthlyDistribution;
+                 const chartData = data ? data.map((value, index) => ({ name: `Month ${index + 1}`, value })) : [];
+                 const isCurrency = activeFilter !== 'Distribution';
+
+                return (
+                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-96">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Projected {activeFilter} Over Time</h2>
+                        {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="85%">
+                                <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" fontSize={12} />
+                                    <YAxis fontSize={12} tickFormatter={(v) => isCurrency ? formatCurrencyShort(v, currency) : formatNumber(v)} />
+                                    <Tooltip formatter={(v: number) => isCurrency ? formatCurrency(v, currency) : formatNumber(v)} />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="value" name={activeFilter} stroke="#16a34a" strokeWidth={2} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : renderNoData(`Projected ${activeFilter}`)}
+                     </div>
+                );
+            case 'Income':
+                if (userPlan === 'pro') {
+                    const data = projectionDetails?.monthlyIncome;
+                    const chartData = data ? data.map((value, index) => ({ name: `Month ${index + 1}`, value })) : [];
+                    return (
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-96">
+                            <h2 className="text-xl font-semibold text-gray-900 mb-4">Projected Income (Net Profit) Over Time</h2>
+                            {chartData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="85%">
+                                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="name" fontSize={12} />
+                                        <YAxis fontSize={12} tickFormatter={(v) => formatCurrencyShort(v, currency)} />
+                                        <Tooltip formatter={(v: number) => formatCurrency(v, currency)} />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="value" name={"Projected Income"} stroke="#16a34a" strokeWidth={2} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            ) : renderNoData(`Projected Income`)}
+                        </div>
+                    );
+                } else {
+                    return (
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-96">
+                            <h2 className="text-xl font-semibold text-gray-900 mb-4">Daily Income from Sales</h2>
+                            {dailyIncomeData.some(d => d.Income > 0) ? (
+                                <ResponsiveContainer width="100%" height="85%">
+                                    <BarChart data={dailyIncomeData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="date" fontSize={12} />
+                                        <YAxis fontSize={12} tickFormatter={(v) => formatCurrencyShort(v, currency)} />
+                                        <Tooltip formatter={(v: number) => formatCurrency(v, currency)} />
+                                        <Legend />
+                                        <Bar dataKey="Income" fill="#16a34a" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : renderNoData('Income from Sales')}
+                        </div>
+                    );
+                }
+            case 'Targets':
+                const targetData = [
+                    { name: 'Revenue', value: kpis.totalRevenue },
+                    { name: 'Target', value: targets.daily * daysInRange },
+                ];
+                 return (
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm h-96">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Target vs. Actual Revenue</h2>
+                         {kpis.totalRevenue > 0 ? (
+                        <ResponsiveContainer width="100%" height="85%">
+                             <BarChart data={targetData} layout="vertical">
+                                 <CartesianGrid strokeDasharray="3 3" />
+                                 <XAxis type="number" tickFormatter={(v) => formatCurrencyShort(v, currency)} />
+                                 <YAxis type="category" dataKey="name" width={80} />
+                                 <Tooltip formatter={(v: number) => formatCurrency(v, currency)} />
+                                 <Bar dataKey="value" fill="#16a34a" />
+                             </BarChart>
+                        </ResponsiveContainer>
+                         ) : renderNoData('Targets')}
+                    </div>
+                );
+            default: return null;
+        }
+    }
+
+
+    const filterOptions: ReportFilter[] = ['Sales Revenue', 'Income', 'Cost', 'Distribution', 'Targets'];
+
+    return (
+        <div className="space-y-6 md:space-y-8">
+            <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
+            
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                {/* Date Filter */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => setRange('7days')} className={`px-3 py-1 text-sm font-medium rounded-md ${range === '7days' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>Last 7 Days</button>
+                    <button onClick={() => setRange('30days')} className={`px-3 py-1 text-sm font-medium rounded-md ${range === '30days' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700'}`}>Last 30 Days</button>
+                    <div className="flex items-center space-x-2 text-sm">
+                        <input type="date" value={customStart} onChange={e => {setCustomStart(e.target.value); setRange('custom');}} className="border-gray-300 rounded-md text-sm" />
+                        <span>to</span>
+                        <input type="date" value={customEnd} onChange={e => {setCustomEnd(e.target.value); setRange('custom');}} className="border-gray-300 rounded-md text-sm" />
+                    </div>
+                </div>
+                {/* Metric Filter */}
+                <div className="border-t border-gray-200 pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {filterOptions.map(filter => {
+                             const isPro = ['Cost', 'Distribution'].includes(filter);
+                             return (
+                                <button key={filter} onClick={() => setActiveFilter(filter)} className={`flex items-center gap-2 px-3 py-1 text-sm font-medium rounded-md ${activeFilter === filter ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700'}`}>
+                                    {filter}
+                                    {isPro && <span className="text-xs font-bold text-yellow-900 bg-yellow-300 px-1.5 py-0.5 rounded-full">PRO</span>}
+                                </button>
+                             );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <StatCard title="Total Revenue" value={formatCurrencyShort(kpis.totalRevenue, currency)} />
+                <StatCard title="Total Number of Sales" value={kpis.totalSales.toLocaleString()} />
+                <StatCard title="Target Achievement" value={`${kpis.targetAchievement.toFixed(1)}%`} />
+            </div>
+
+            {renderContent()}
+
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">AI-Powered Analysis</h2>
+                <p className="text-sm text-gray-500 mb-4">Get an automated analysis of this period's performance and actionable insights.</p>
+                <button onClick={handleGenerateAnalysis} disabled={isLoading || filteredLogs.length === 0} className="w-full px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center space-x-2 disabled:bg-gray-400">
+                    {isLoading && <Spinner />}
+                    <span>{isLoading ? 'Analyzing...' : 'Generate AI Analysis'}</span>
+                </button>
+                {aiAnalysis && (
+                    <div className="prose prose-sm max-w-none mt-4 text-gray-800 border-t border-gray-200 pt-4">
+                        <pre className="whitespace-pre-wrap font-sans">{aiAnalysis}</pre>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default Reports;

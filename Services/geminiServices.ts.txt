@@ -1,0 +1,100 @@
+import { GoogleGenAI } from "@google/genai";
+import { SalesTarget, SalesLog } from '../types';
+
+if (!process.env.API_KEY) {
+    throw new Error("API_KEY environment variable not set");
+}
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export const generateSalesPlan = async (businessInfo: string, goal: string): Promise<string> => {
+    try {
+        const prompt = `
+            You are an expert business growth strategist for 'BMG (Business Must Grow) Enterprise Solutions'.
+            A user needs a sales and revenue planning template.
+            Their business is: ${businessInfo}.
+            Their primary goal is: ${goal}.
+
+            Generate a comprehensive, actionable sales plan template in Markdown format. The template should include sections for:
+            1.  Executive Summary
+            2.  Target Audience Analysis
+            3.  Sales Goals & Objectives (with placeholders for Daily, Weekly, Monthly, Quarterly, Annual targets)
+            4.  Key Strategies & Tactics (e.g., Lead Generation, Sales Funnel, Closing Techniques)
+            5.  Required Resources (Team, Tools, Budget)
+            6.  Key Performance Indicators (KPIs) to track.
+            7.  A sample timeline for the first quarter.
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error generating sales plan:", error);
+        return "Sorry, I couldn't generate a sales plan at the moment. Please try again later.";
+    }
+};
+
+export const getBusinessAdvice = async (prompt: string): Promise<string> => {
+    try {
+        const fullPrompt = `You are an expert business growth advisor for 'BMG (Business Must Grow) Enterprise Solutions'. Provide clear, concise, and actionable advice on the following topic/question: "${prompt}". Structure your response in well-organized Markdown. If the user asks a generic question, provide general business growth advice.`;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: fullPrompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error getting business advice:", error);
+        return "Sorry, I couldn't retrieve advice at the moment. Please try again later.";
+    }
+};
+
+export const startReviewCheckin = async (targets: SalesTarget, logs: SalesLog[]): Promise<string> => {
+    try {
+        const lastLog = logs.length > 0 ? logs[logs.length - 1] : null;
+        const prompt = `
+            You are a supportive but firm business coach for 'BMG (Business Must Grow) Enterprise Solutions'. You are conducting a weekly check-in meeting with a business owner.
+
+            Here is their sales data:
+            - Targets: ${JSON.stringify(targets)}
+            - Recent Sales Logs (last 10): ${JSON.stringify(logs.slice(-10))}
+
+            Your task is to start an interactive review meeting. Analyze the data provided.
+            Begin the conversation by greeting them and asking an open-ended question about their performance and feelings about the past week, referencing a specific piece of their data (e.g., "I see you logged a sale of ₦${lastLog ? lastLog.amount : '...'} for '${lastLog ? lastLog.product || lastLog.notes : '...'}' on ${lastLog ? lastLog.date : '...'}, how did that feel?" or "It looks like you're making progress toward your weekly target. Let's talk about what went well.").
+            Wait for their response. Do not script the entire conversation, just provide the opening line. Your opening MUST be engaging and encouraging.
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error starting review check-in:", error);
+        return "Sorry, I couldn't start the review session. Please check your data and try again.";
+    }
+};
+
+export const generateReportAnalysis = async (filteredLogs: SalesLog[], dateRange: { start: string, end: string }): Promise<string> => {
+    try {
+        const prompt = `
+            You are a senior business analyst for 'BMG (Business Must Grow) Enterprise Solutions'.
+            You have been provided with a business owner's sales data for the period from ${dateRange.start} to ${dateRange.end}.
+            The data is: ${JSON.stringify(filteredLogs.slice(0, 100))} (showing up to 100 logs).
+
+            Your task is to generate a concise, insightful report in Markdown format. The report should contain three sections:
+            1.  **Performance Overview:** Give a brief, high-level summary of the sales performance during this period. Mention total revenue and number of sales.
+            2.  **Key Trends & Observations:** Analyze the data to identify any patterns. For example, were there specific days with higher sales? Did certain products or categories perform better than others?
+            3.  **Actionable Insights & Recommendations:** Based on your analysis, provide 2-3 concrete, actionable recommendations that the business owner can implement to improve their sales.
+
+            Keep the tone professional, encouraging, and easy to understand.
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error generating report analysis:", error);
+        return "Sorry, I couldn't generate an analysis at this moment. Please try again later.";
+    }
+};
