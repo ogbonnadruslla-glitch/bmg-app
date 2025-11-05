@@ -1,0 +1,21 @@
+{
+  "name": "bmg-app",
+  "version": "1.0.0",
+  "description": "BMG Enterprise Solutions App",
+  "private": true,
+  "scripts": {
+    "build": "esbuild index.tsx --bundle --outfile=index.js --jsx=automatic"
+  },
+  "dependencies": {
+    "@google/genai": "^1.28.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.3",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0"
+  }
+}
